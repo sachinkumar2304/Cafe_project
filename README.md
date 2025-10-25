@@ -34,3 +34,23 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+---
+
+## Supabase Setup (Hybrid: Firebase Auth + PostgreSQL Data)
+
+1. Create a free project at supabase.com
+2. Copy your Project URL and anon public key
+3. Create a `.env.local` in `cafe_project/`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
+
+4. Run SQL from `supabase/schema.sql` in Supabase SQL Editor
+5. Start dev server: `npm run dev`
+
+Free-tier notes:
+- Database storage (~500 MB) is persistent total, not per month. It does not auto-delete old data. When you reach the cap, writes fail until you free space or upgrade.
+- Monthly API/bandwidth quotas reset each month.

@@ -1,20 +1,20 @@
 "use client";
 /**
- * Home Page Component: Shows Hero and Locations sections. Uses Anonymous Sign-in for public data access.
+ * Menu Page Component: Shows the menu segregated by the selected location.
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { initializeApp, FirebaseApp, getApps, getApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, Auth, User, signOut, signInAnonymously } from 'firebase/auth'; // Using signInAnonymously
-import { getFirestore, onSnapshot, collection, query, DocumentData, Firestore, doc, getDoc as getDocFirestore } from 'firebase/firestore'; 
-import { Menu, X, MapPin, ShoppingCart, Utensils, Zap, Loader2, RefreshCw, Star, ArrowRight, Key, LogOut, Minus, Plus } from 'lucide-react';
-import confetti from 'canvas-confetti'; 
+import { getAuth, signInAnonymously, onAuthStateChanged, Auth, User } from 'firebase/auth';
+import { getFirestore, onSnapshot, collection, query, DocumentData, Firestore, addDoc, getDocs, writeBatch, doc, getDoc } from 'firebase/firestore'; 
+import { Menu as MenuIcon, X, MapPin, ShoppingCart, Utensils, Zap, Loader2, RefreshCw, Star, ArrowRight, Minus, Plus } from 'lucide-react';
+import confetti from 'canvas-confetti';
 
-// --- Global Constants (FIXED for delivery logic) ---
+// --- Global Constants ---
 const DELIVERY_CHARGE = 50;
 const FREE_DELIVERY_THRESHOLD = 500; 
-const ADMIN_ROLE_PATH = 'admins'; 
 
 // --- Firebase Setup Configuration (Hardcoded for Guaranteed Functionality) ---
+// NOTE: Keys are hardcoded here to eliminate all .env.local file reading issues in development.
 const firebaseConfig = {
     apiKey: "AIzaSyDFGONbEvdW0m5HmhOYdBmiWDhkJBG6pS8", 
     authDomain: "cafe-project-2025.firebaseapp.com",
@@ -25,21 +25,46 @@ const firebaseConfig = {
 };
 const PROJECT_ID = firebaseConfig.projectId || 'default-project-id';
 
-// --- Interfaces and Types ---
-interface ShopLocation { id: string; name: string; address: string; highlights: string; }
-interface MenuItem { id: string; name: string; description: string; price: number; category: string; isVeg: boolean; isAvailable: boolean; imageUrl: string; locationId?: string; }
-interface CartItem extends MenuItem { quantity: number; }
-interface CartSummary { subtotal: number; deliveryCharge: number; total: number; isFreeDelivery: boolean; }
+// --- Interfaces and Types (Copied from page.tsx) ---
+interface ShopLocation {
+    id: string;
+    name: string;
+    address: string;
+    highlights: string;
+}
 
-// --- Firebase Initialization and Auth Hook ---
+interface MenuItem {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    category: string;
+    isVeg: boolean;
+    isAvailable: boolean;
+    imageUrl: string;
+    locationId?: string; // Add locationId for filtering
+}
+
+interface CartItem extends MenuItem {
+    quantity: number;
+}
+
+interface CartSummary {
+    subtotal: number;
+    deliveryCharge: number;
+    total: number;
+    isFreeDelivery: boolean;
+}
+
+// --- Data Fetching and Firebase Logic (Copied and modified for modularity) ---
 const useFirebaseSetup = () => {
     const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
     const [db, setDb] = useState<Firestore | null>(null);
     const [auth, setAuth] = useState<Auth | null>(null);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [isAdmin, setIsAdmin] = useState(false); 
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
+    const [isSeedingDone, setIsSeedingDone] = useState(false);
 
     // 1. Initialize Firebase App
     useEffect(() => {
@@ -55,7 +80,7 @@ const useFirebaseSetup = () => {
         }
     }, []);
 
-    // 2. Setup Services and Authentication Listener + Role Check
+    // 2. Setup Services and Authentication Listener
     useEffect(() => {
         if (!firebaseApp || authError) return;
 
@@ -65,61 +90,34 @@ const useFirebaseSetup = () => {
             setAuth(authInstance);
             setDb(dbInstance);
 
-            const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+            const unsubscribe = onAuthStateChanged(authInstance, (user) => {
                 if (user) {
                     setCurrentUser(user);
-                    
-                    // --- RBAC CHECK (Admin check only) ---
-                    if (dbInstance) {
-                        // Try both paths: artifacts path first, then direct admins path
-                        const artifactsAdminRef = doc(dbInstance, `artifacts/${PROJECT_ID}/${ADMIN_ROLE_PATH}/${user.uid}`);
-                        const directAdminRef = doc(dbInstance, `${ADMIN_ROLE_PATH}/${user.uid}`);
-                        
-                        // Check artifacts path first
-                        let adminDoc = await getDocFirestore(artifactsAdminRef);
-                        
-                        // If not found in artifacts path, check direct admins path
-                        if (!adminDoc.exists()) {
-                            adminDoc = await getDocFirestore(directAdminRef);
-                        }
-
-                        if (adminDoc.exists() && adminDoc.data()?.role === 'super_admin') {
-                            setIsAdmin(true);
-                        } else {
-                            setIsAdmin(false);
-                        }
-                    }
+                    setIsAuthReady(true);
                 } else {
-                    // --- ANONYMOUS SIGN-IN (Wapas ON kiya for Customers to get UID for Cart) ---
                     signInAnonymously(authInstance)
                         .then((credential) => {
                             setCurrentUser(credential.user);
+                            setIsAuthReady(true);
                         })
                         .catch((error: any) => {
                             setAuthError(`Auth Failed: ${error.code}. Anonymous sign-in failed.`);
+                            setIsAuthReady(true); 
                         });
-                    setIsAdmin(false);
                 }
-                setIsAuthReady(true);
             });
 
-            return () => unsubscribe(); 
+            return () => unsubscribe();
         } catch (error: any) {
             setAuthError(`Service Setup Failed: ${error.message}`);
         }
     }, [firebaseApp, authError]);
     
-    // Sign out function for the client
-    const logoutClient = async () => {
-        if (auth) {
-            await signOut(auth);
-        }
-    };
+    // NOTE: Seeding logic is removed from the menu page to prevent slow loading.
 
-    return { db, auth, currentUser, isAdmin, isAuthReady, authError, logoutClient };
+    return { db, auth, currentUser, isAuthReady, authError, isSeedingDone };
 };
 
-// --- Data Fetcher Hook (Fetches from PostgreSQL via API with fallback) ---
 const useDataFetcher = () => {
     const [locations, setLocations] = useState<ShopLocation[]>([]);
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -157,16 +155,16 @@ const useDataFetcher = () => {
                     const locationsData = await locationsResponse.json();
                     if (locationsData.length > 0) {
                         setLocations(locationsData);
-                        console.log('Homepage: Locations loaded from PostgreSQL:', locationsData.length);
+                        console.log('Menu Page: Locations loaded from PostgreSQL:', locationsData.length);
                     } else {
                         // Use fallback locations if database is empty
                         setLocations(fallbackLocations);
-                        console.log('Homepage: Using fallback locations');
+                        console.log('Menu Page: Using fallback locations');
                     }
                 } else {
                     // Use fallback locations if API fails
                     setLocations(fallbackLocations);
-                    console.log('Homepage: API failed, using fallback locations');
+                    console.log('Menu Page: API failed, using fallback locations');
                 }
 
                 // Try to fetch menu items from PostgreSQL via API
@@ -187,10 +185,15 @@ const useDataFetcher = () => {
                         locationId: item.location_id || 'loc1'
                     }));
                     
-                    console.log('Homepage: Menu items loaded:', mappedItems.length, 'items');
-                    setMenuItems(mappedItems);
+                    console.log('Menu Page: Menu items loaded:', mappedItems.length, 'items');
+                    console.log('Menu Page: Items by location:', mappedItems.reduce((acc: Record<string, number>, item: MenuItem) => {
+                        acc[item.locationId] = (acc[item.locationId] || 0) + 1;
+                        return acc;
+                    }, {}));
+                    
+                    setMenuItems(mappedItems.sort((a: MenuItem, b: MenuItem) => a.category.localeCompare(b.category)));
                 } else {
-                    console.log('Homepage: No menu items in database');
+                    console.log('Menu Page: No menu items in database');
                     setMenuItems([]);
                 }
             } catch (error) {
@@ -209,7 +212,6 @@ const useDataFetcher = () => {
     return { locations, menuItems, isLoading };
 };
 
-// --- Cart Logic (Same as before) ---
 const useCart = (menuItems: MenuItem[]) => {
     const [cart, setCart] = useState<CartItem[]>([]);
     const [isCartOpen, setIsCartOpen] = useState(false);
@@ -263,181 +265,210 @@ const useCart = (menuItems: MenuItem[]) => {
     };
 };
 
-// --- UI Components ---
-const Header = ({ onOpenCart, cartCount, isAdmin, currentUser }: { onOpenCart: () => void, cartCount: number, isAdmin: boolean, currentUser: User | null }) => {
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-    return (
-        <header className="fixed top-0 left-0 right-0 z-50 shadow-lg bg-white/95 backdrop-blur-sm">
-            <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-                {/* Logo and Name */}
-                <div className="flex items-center space-x-2">
-                    <Utensils className="h-7 w-7 text-red-700" />
-                    <span className={`text-2xl font-extrabold tracking-widest text-red-900`}>
-                        CAFÉ DELIGHTS
-                    </span>
-                </div>
-
-                {/* Desktop Navigation */}
-                <nav className="hidden md:flex space-x-8 items-center text-lg font-medium text-gray-700">
-                    <a href="#home" className="hover:text-red-700 transition duration-300">Home</a>
-                    <a href="#locations" className="hover:text-red-700 transition duration-300">Locations</a>
-                    <a href="/menu" className="hover:text-red-700 transition duration-300 font-bold">Menu</a> 
-                    
-                    
-                    <button
-                        onClick={onOpenCart}
-                        className="relative p-2 bg-red-700 text-white rounded-full shadow-lg hover:bg-red-800 transition duration-300 transform hover:scale-105"
-                        aria-label="View Shopping Cart"
-                    >
-                        <ShoppingCart className="h-6 w-6" />
-                        {cartCount > 0 && (
-                            <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 bg-yellow-400 text-red-900 text-xs font-bold rounded-full border-2 border-white">
-                                {cartCount}
-                            </span>
-                        )}
-                    </button>
-                </nav>
-
-                {/* Mobile Menu Button and Cart Icon */}
-                <div className="md:hidden flex items-center space-x-4">
-                    <button
-                        onClick={onOpenCart}
-                        className="relative p-2 bg-red-700 text-white rounded-full shadow-lg hover:bg-red-800 transition duration-300"
-                        aria-label="View Shopping Cart"
-                    >
-                        <ShoppingCart className="h-6 w-6" />
-                        {cartCount > 0 && (
-                            <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 bg-yellow-400 text-red-900 text-xs font-bold rounded-full border-2 border-white">
-                                {cartCount}
-                            </span>
-                        )}
-                    </button>
-                    <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 text-gray-800 rounded-lg hover:bg-gray-100">
-                        {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-                    </button>
-                </div>
-            </div>
-
-            {/* Mobile Navigation Dropdown */}
-            {isMenuOpen && (
-                <div className="md:hidden bg-white shadow-xl py-2 transition-all duration-300 ease-in-out">
-                    <a href="#home" className="block px-4 py-2 text-gray-700 hover:bg-red-50">Home</a>
-                    <a href="#locations" className="block px-4 py-2 text-gray-700 hover:bg-red-50">Locations</a>
-                    {/* Link to the new menu page */}
-                    <a href="/menu" className="block px-4 py-2 text-gray-700 hover:bg-red-50 font-bold">Menu</a>
-                </div>
-            )}
-        </header>
-    );
-};
-const HeroSection = ({ onMenuClick }: { onMenuClick: () => void }) => (
-    <section id="home" className="relative pt-24 pb-16 min-h-[500px] flex items-center bg-gray-50 overflow-hidden">
-        <div className="container mx-auto px-4 z-10 grid md:grid-cols-2 gap-12 items-center">
-            {/* Text Content */}
-            <div className="animate-fade-in">
-                <p className="text-red-700 font-semibold text-lg mb-2 flex items-center">
-                    <Zap className="h-5 w-5 mr-2" />
-                    Authentic South Indian Flavors
-                </p>
-                <h1 className="text-5xl md:text-6xl font-extrabold text-red-900 leading-tight mb-4">
-                    The <span className="text-orange-600">Taste</span> of Tradition, Delivered.
-                </h1>
-                <p className="text-gray-600 text-xl mb-8 max-w-lg">
-                    Freshly prepared dosa, idli, and signature sweets from your favorite cafe locations.
-                </p>
-                {/* Redirects to the new /menu page */}
-                <a 
-                    href="/menu"
-                    className="flex items-center px-8 py-4 text-lg font-bold text-white bg-red-700 rounded-full shadow-xl hover:bg-red-800 transition duration-300 transform hover:scale-105 w-fit"
+// --- Menu Page Specific Components ---
+const MenuHeader = ({ locations, activeLocationId, setActiveLocationId, cartCount, onOpenCart }: {
+    locations: ShopLocation[], 
+    activeLocationId: string | null, 
+    setActiveLocationId: (id: string) => void,
+    cartCount: number,
+    onOpenCart: () => void
+}) => (
+    <header className="sticky top-0 z-40 bg-white shadow-md pt-4">
+        {/* Main Navigation Bar */}
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+            <a href="/" className="flex items-center space-x-2">
+                <Utensils className="w-6 h-6 text-red-700" />
+                <span className="text-xl font-extrabold tracking-wider text-red-900">
+                    CAFÉ DELIGHTS
+                </span>
+            </a>
+            <div className="flex items-center space-x-4">
+                <a href="/" className="text-lg font-medium text-gray-700 hover:text-red-700 hidden sm:block">Home</a>
+                <button
+                    onClick={onOpenCart}
+                    className="relative p-2 rounded-full bg-red-700 text-white hover:bg-red-800 transition duration-150 shadow-lg"
+                    aria-label="View Shopping Cart"
                 >
-                    Order Now
-                    <ArrowRight className="ml-2 h-5 w-5" />
-                </a>
-            </div>
-
-            {/* Image/Visual Element */}
-            <div className="hidden md:flex justify-center relative">
-                <div className="w-[450px] h-[450px] bg-orange-200 rounded-full absolute -right-20 -top-20 opacity-30"></div>
-                <img
-                    src="https://placehold.co/500x500/FF4500/ffffff?text=Delicious+Dosa"
-                    alt="Delicious Dosa"
-                    className="w-full max-w-md rounded-3xl shadow-2xl transform hover:rotate-1 transition duration-500 ease-in-out"
-                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/500x500/FF4500/ffffff?text=Delicious+Dosa' }}
-                />
+                    <ShoppingCart className="w-5 h-5" />
+                    {cartCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-orange-400 text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
+                            {cartCount}
+                        </span>
+                    )}
+                </button>
             </div>
         </div>
-        {/* Background color wave for effect */}
-        <div className="absolute bottom-0 left-0 w-full h-1/4 bg-gradient-to-t from-white to-transparent"></div>
-    </section>
+
+        {/* Location Tabs (New Navigation) */}
+        <div className="bg-red-900 shadow-inner py-3 mt-1">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex overflow-x-auto space-x-4">
+                {locations.map(loc => (
+                    <button
+                        key={loc.id}
+                        onClick={() => setActiveLocationId(loc.id)}
+                        className={`px-5 py-2 text-sm font-semibold rounded-full flex-shrink-0 transition-colors duration-200 ${
+                            activeLocationId === loc.id
+                                ? 'bg-orange-500 text-white shadow-lg'
+                                : 'bg-red-800 text-red-200 hover:bg-red-700'
+                        }`}
+                    >
+                        <MapPin className='w-4 h-4 mr-2' />
+                        {loc.name}
+                    </button>
+                ))}
+            </div>
+        </div>
+    </header>
 );
-const LocationCard = ({ location }: { location: ShopLocation }) => {
-    // Get appropriate image based on location name
-    const getLocationImage = (locationName: string) => {
-        if (locationName.includes('Rameshwaram')) {
-            return 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
-        } else if (locationName.includes('Vighnaharta Sweet')) {
-            return 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
-        } else if (locationName.includes('Vighnaharta Snacks')) {
-            return 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
-        }
-        return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
-    };
+
+const MenuItemCard = ({ item, onAddToCart }: { item: MenuItem, onAddToCart: (item: MenuItem) => void }) => {
+    const isOutOfStock = !item.isAvailable;
+    const stockClass = isOutOfStock ? 'opacity-50' : 'hover:shadow-xl hover:border-red-300';
 
     return (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-2xl transition duration-300 transform hover:-translate-y-1 overflow-hidden">
-            {/* Location Image */}
-            <div className="h-48 w-full overflow-hidden">
-                <img 
-                    src={getLocationImage(location.name)}
-                    alt={location.name}
-                    className="w-full h-full object-cover hover:scale-105 transition duration-300"
-                    onError={(e) => { 
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&h=300&fit=crop&crop=center';
-                    }}
-                />
-            </div>
-            
-            {/* Location Info */}
-            <div className="p-6">
-                <div className="flex items-center mb-3">
-                    <MapPin className="h-6 w-6 text-red-700 mr-3" />
-                    <h3 className="text-xl font-bold text-red-900">{location.name}</h3>
+        <div className={`bg-white p-4 rounded-xl shadow-lg flex space-x-4 border-2 border-transparent transition duration-300 ${stockClass}`}>
+            <img
+                src={item.imageUrl}
+                alt={item.name}
+                className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/100x100/A0522D/ffffff?text=Food' }}
+            />
+            <div className="flex-grow">
+                <div className="flex items-center justify-between">
+                    <h4 className="text-lg font-bold text-red-900">{item.name}</h4>
+                    {item.isVeg && <span className="text-green-600 border border-green-600 px-2 py-0.5 text-xs rounded-full">Veg</span>}
                 </div>
-                <p className="text-gray-700 mb-2">{location.address}</p>
-                <div className="flex items-center text-orange-600 font-medium text-sm">
-                    <Star className="h-4 w-4 fill-orange-500 mr-1" />
-                    {location.highlights}
+                <p className="text-gray-500 text-sm my-1 line-clamp-2">{item.description}</p>
+                <div className="flex justify-between items-center mt-2">
+                    <span className="text-xl font-extrabold text-orange-600">₹{item.price}</span>
+                    <button
+                        onClick={() => onAddToCart(item)}
+                        disabled={isOutOfStock}
+                        className={`px-4 py-2 text-sm font-semibold rounded-full transition duration-300 transform ${
+                            isOutOfStock
+                                ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
+                                : 'bg-red-700 text-white hover:bg-red-800 hover:scale-105'
+                        }`}
+                    >
+                        {isOutOfStock ? 'Out of Stock' : 'Add +'}
+                    </button>
                 </div>
             </div>
         </div>
     );
 };
-const LocationsSection = ({ locations, isLoading }: { locations: ShopLocation[], isLoading: boolean }) => (
-    <section id="locations" className="py-16 bg-white">
-        <div className="container mx-auto px-4">
-            <h2 className="text-4xl font-extrabold text-center text-red-900 mb-4">
-                Our Cafe Locations
-            </h2>
-            <p className="text-center text-gray-600 mb-10 text-lg max-w-3xl mx-auto">
-                Select your nearest outlet to view the available menu and place your order.
-            </p>
 
-            {isLoading ? (
-                <div className="text-center py-10">
-                    <Loader2 className="h-8 w-8 animate-spin text-red-700 mx-auto" />
-                    <p className="text-gray-600 mt-2">Loading locations...</p>
-                </div>
-            ) : (
-                <div className="grid md:grid-cols-3 gap-8">
-                    {locations.map(loc => (
-                        <LocationCard key={loc.id} location={loc} />
-                    ))}
-                </div>
-            )}
-        </div>
-    </section>
-);
+const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocationId, locations }: { 
+    menuItems: MenuItem[], 
+    isLoading: boolean, 
+    onAddToCart: (item: MenuItem) => void,
+    activeLocationId: string | null,
+    locations: ShopLocation[]
+}) => {
+    // FIX: Filter menu items based on the active location ID
+    const filteredByLocation = useMemo(() => {
+        if (!activeLocationId) return [];
+        
+        console.log('Menu Page: Filtering for location:', activeLocationId);
+        console.log('Menu Page: Total menu items:', menuItems.length);
+        
+        const filtered = menuItems.filter(item => {
+            console.log(`Menu Item ${item.name} (${item.id}): locationId=${item.locationId}, activeLocation=${activeLocationId}`);
+            return item.locationId === activeLocationId;
+        });
+        
+        console.log('Menu Page: Filtered items:', filtered.length);
+        return filtered;
+    }, [menuItems, activeLocationId]);
+
+    const categories = useMemo(() => {
+        const uniqueCategories = Array.from(new Set(filteredByLocation.map(item => item.category)));
+        return uniqueCategories;
+    }, [filteredByLocation]);
+
+    const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+    // Set first category as active when data loads
+    useEffect(() => {
+        if (categories.length > 0 && !activeCategory) {
+            setActiveCategory(categories[0]);
+        }
+        // Reset category if the active location changes and the current category isn't in the new location's menu
+        else if (categories.length > 0 && activeCategory && !categories.includes(activeCategory)) {
+             setActiveCategory(categories[0]);
+        }
+    }, [categories, activeCategory, activeLocationId]);
+
+    const filteredItems = useMemo(() => {
+        if (!activeCategory) return filteredByLocation;
+        return filteredByLocation.filter(item => item.category === activeCategory);
+    }, [filteredByLocation, activeCategory]);
+    
+    const activeLocationName = locations.find(loc => loc.id === activeLocationId)?.name || 'Loading Menu...';
+
+
+    return (
+        <section className="py-10 bg-gray-50 min-h-screen">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+                <h2 className="text-3xl font-extrabold text-red-700 mb-2">
+                    Menu for: <span className="text-red-900">{activeLocationName}</span>
+                </h2>
+                <p className="text-gray-600 mb-8">
+                    Select your category below to explore.
+                </p>
+
+                {isLoading ? (
+                    <div className="text-center py-20">
+                        <Loader2 className="h-10 w-10 animate-spin text-red-700 mx-auto" />
+                        <p className="text-gray-600 mt-4">Fetching menu...</p>
+                    </div>
+                ) : (
+                    <>
+                        {/* Category Tabs */}
+                        <div className="flex flex-wrap justify-start gap-3 mb-10 border-b pb-4">
+                            {categories.map(category => (
+                                <button
+                                    key={category}
+                                    onClick={() => setActiveCategory(category)}
+                                    className={`px-5 py-2 text-sm font-semibold rounded-lg transition duration-300 ${
+                                        activeCategory === category
+                                            ? 'bg-orange-500 text-white shadow-md'
+                                            : 'bg-white text-gray-700 border hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {category}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Menu Items Grid */}
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {filteredItems.map((item, index) => (
+                                <MenuItemCard key={`${item.id}-${index}-${activeLocationId}`} item={item} onAddToCart={onAddToCart} />
+                            ))}
+                        </div>
+
+                        {/* Fallback if menu is empty after category filter */}
+                        {filteredItems.length === 0 && categories.length > 0 && (
+                            <div className="text-center py-12 text-gray-500">
+                                <p className="text-xl font-semibold">No items found in the selected category.</p>
+                                <p className="text-md mt-2">Try switching categories or checking back later!</p>
+                            </div>
+                        )}
+                        {/* Fallback if location has no mapped menu items */}
+                        {filteredByLocation.length === 0 && categories.length === 0 && (
+                             <div className="text-center py-12 text-gray-500">
+                                <p className="text-xl font-semibold">Menu coming soon!</p>
+                                <p className="text-md mt-2">We're working on adding delicious items to this location.</p>
+                                <p className="text-sm mt-1">Check back later or try other locations!</p>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+        </section>
+    );
+};
 
 const CartModal = ({
     cart,
@@ -454,7 +485,6 @@ const CartModal = ({
     updateQuantity: (itemId: string, change: number) => void,
     clearCart: () => void
 }) => {
-    // Confetti is moved outside this component to the App component's handleCheckout to avoid re-rendering issues
     const handleCheckout = () => {
         if (summary.total > 0) {
             confetti({
@@ -473,7 +503,7 @@ const CartModal = ({
         <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex justify-end transition-opacity duration-300" onClick={onClose}>
             <div
                 className="w-full max-w-md bg-white h-full shadow-2xl overflow-y-auto transform transition-transform duration-300 ease-in-out"
-                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
+                onClick={(e) => e.stopPropagation()} 
             >
                 {/* Header */}
                 <div className="sticky top-0 bg-red-700 text-white p-4 flex justify-between items-center shadow-md">
@@ -579,31 +609,50 @@ const CartModal = ({
 };
 
 
-// --- Main App Component ---
+// --- Main Menu Page App ---
 
-const App = () => {
-    // 1. Firebase Setup and Auth
-    const { db, auth, currentUser, isAdmin, isAuthReady, authError } = useFirebaseSetup();
+const MenuApp = () => {
+    // 1. Firebase Setup and Auth (for user session only)
+    const { isAuthReady, authError } = useFirebaseSetup();
 
     // 2. Data Fetching from PostgreSQL via API
     const { locations, menuItems, isLoading } = useDataFetcher();
 
-    // 3. Cart State and Logic
+    // 3. Location State: Default to the first location found
+    const [activeLocationId, setActiveLocationId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (locations.length > 0 && !activeLocationId) {
+            setActiveLocationId(locations[0].id);
+        }
+    }, [locations, activeLocationId]);
+
+    // 4. Cart State and Logic
     const { cart, addToCart, updateQuantity, clearCart, summary, isCartOpen, setIsCartOpen } = useCart(menuItems);
     const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-    const scrollToMenu = () => {
-        // Since we removed the menu section from this page, this button should redirect
-        window.location.href = '/menu';
-    };
-    
     // Show initial loading screen while auth and data are setting up
-    if (isLoading) {
+    if (authError) {
+         return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
+                <Loader2 className="h-10 w-10 animate-spin text-red-700 mb-4" />
+                <p className="text-lg text-gray-700">Loading Menu Configuration...</p>
+                {authError && (
+                    <div className="mt-6 p-4 bg-red-100 border-l-4 border-red-500 text-red-700 max-w-md rounded-lg shadow-md">
+                        <p className="font-bold">Authentication Error!</p>
+                        <p className="text-sm">Please check your Firebase keys and ensure Anonymous sign-in is enabled.</p>
+                        <code className="block mt-2 p-2 bg-red-200 text-xs break-words">{authError}</code>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    if (isLoading || !activeLocationId) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
                 <Loader2 className="h-10 w-10 animate-spin text-red-700 mb-4" />
-                <p className="text-lg text-gray-700">Loading Configuration and Authentication...</p>
-                {/* Authentication Error Message (Only visible if an error occurs) */}
+                <p className="text-lg text-gray-700">Loading Menu Configuration...</p>
                 {authError && (
                     <div className="mt-6 p-4 bg-red-100 border-l-4 border-red-500 text-red-700 max-w-md rounded-lg shadow-md">
                         <p className="font-bold">Authentication Error!</p>
@@ -615,43 +664,33 @@ const App = () => {
         );
     }
     
-
-    
-    // No fallback needed - always show the homepage with empty sections
+    // No fallback needed - always show the menu page with empty sections
 
 
     return (
         <div className="min-h-screen bg-gray-100 font-sans">
-            <style jsx global>{`
-                /* Font: Inter or system default */
-                body {
-                    font-family: 'Inter', sans-serif;
-                    background-color: #f3f4f6; /* Light gray background */
-                }
-            `}</style>
+            <MenuHeader 
+                locations={locations} 
+                activeLocationId={activeLocationId} 
+                setActiveLocationId={setActiveLocationId}
+                cartCount={cartCount}
+                onOpenCart={() => setIsCartOpen(true)}
+            />
 
-            <Header onOpenCart={() => setIsCartOpen(true)} cartCount={cartCount} isAdmin={isAdmin} currentUser={currentUser} /> 
-
-            <main className="pt-16">
-                <HeroSection onMenuClick={scrollToMenu} />
-                <LocationsSection locations={locations} isLoading={isLoading && locations.length === 0} />
-                {/* Menu Section Removed from Home Page */}
+            <main className="pt-32"> {/* Added pt-32 to accommodate the sticky double header */}
+                <LocationMenuSection 
+                    menuItems={menuItems} 
+                    isLoading={isLoading} 
+                    onAddToCart={addToCart} 
+                    activeLocationId={activeLocationId}
+                    locations={locations}
+                />
             </main>
 
             <footer className="bg-red-900 text-white py-8">
                 <div className="container mx-auto px-4 text-center">
-                    <div className="flex justify-center space-x-6 mb-4">
-                        <a href="#home" className="hover:text-red-300 transition">Home</a>
-                        <a href="#locations" className="hover:text-red-300 transition">Locations</a>
-                        <a href="/menu" className="hover:text-red-300 transition font-bold">Menu</a>
-                        
-
-                    </div>
                     <p className="text-sm border-t border-red-700 pt-4">
-                        &copy; {new Date().getFullYear()} CAFÉ DELIGHTS. All rights reserved.
-                    </p>
-                    <p className="text-xs mt-1 text-red-400">
-                        Designed for high traffic and scalability (Next.js + Firestore).
+                        &copy; {new Date().getFullYear()} CAFÉ DELIGHTS Menu.
                     </p>
                 </div>
             </footer>
@@ -668,4 +707,4 @@ const App = () => {
     );
 };
 
-export default App;
+export default MenuApp;
