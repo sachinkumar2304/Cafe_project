@@ -1,165 +1,148 @@
-import { NextRequest } from 'next/server';
-import { supabase } from '../../../lib/supabaseClient';
-import { getMenuItems, addMenuItem, updateMenuItem, deleteMenuItem, clearAllMenuItems, clearHardcodedData } from '../../../lib/menuStorage';
+import { createClient } from '@/lib/supabase/server';
+import { NextResponse } from 'next/server';
+import { MenuItem } from '@/lib/menuStorage';
 
 export async function GET() {
   try {
-    // Get menu items from storage
-    const menuItems = getMenuItems();
-    
-    // Convert to API format
-    const apiFormat = menuItems.map(item => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      category: item.category,
-      is_veg: item.isVeg,
-      is_available: item.isAvailable,
-      image_url: item.imageUrl,
-      location_id: item.locationId,
-      created_at: item.createdAt,
-      updated_at: item.updatedAt
-    }));
-    
-    return Response.json(apiFormat);
-  } catch (error) {
-    console.error('API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from('menu_items')
+      .select('*')
+      .order('category', { ascending: true })
+      .returns<MenuItem[]>();
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    console.log('POST request received:', body);
-    
-    // Convert API format to storage format
-    const newItem = addMenuItem({
-      name: body.name,
-      description: body.description,
-      price: body.price,
-      category: body.category,
-      isVeg: body.is_veg,
-      isAvailable: body.is_available,
-      imageUrl: body.image_url,
-      locationId: body.location_id
-    });
-    
-    console.log('New item created:', newItem);
-    
-    // Convert back to API format
-    const apiFormat = {
-      id: newItem.id,
-      name: newItem.name,
-      description: newItem.description,
-      price: newItem.price,
-      category: newItem.category,
-      is_veg: newItem.isVeg,
-      is_available: newItem.isAvailable,
-      image_url: newItem.imageUrl,
-      location_id: newItem.locationId,
-      created_at: newItem.createdAt,
-      updated_at: newItem.updatedAt
-    };
-    
-    console.log('Returning API format:', apiFormat);
-    return Response.json(apiFormat, { status: 201 });
-  } catch (error) {
-    console.error('API POST error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-export async function PUT(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { id, ...fields } = body;
-    
-    if (!id) return new Response(JSON.stringify({ error: 'id required' }), { 
-      status: 400,
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-    // Convert API format to storage format
-    const updates: any = {};
-    if (fields.name !== undefined) updates.name = fields.name;
-    if (fields.description !== undefined) updates.description = fields.description;
-    if (fields.price !== undefined) updates.price = fields.price;
-    if (fields.category !== undefined) updates.category = fields.category;
-    if (fields.is_veg !== undefined) updates.isVeg = fields.is_veg;
-    if (fields.is_available !== undefined) updates.isAvailable = fields.is_available;
-    if (fields.image_url !== undefined) updates.imageUrl = fields.image_url;
-    if (fields.location_id !== undefined) updates.locationId = fields.location_id;
-    
-    const updatedItem = updateMenuItem(id, updates);
-    
-    if (!updatedItem) {
-      return new Response(JSON.stringify({ error: 'Item not found' }), { 
-        status: 404,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    if (error) {
+      console.error('Supabase error fetching menu items:', error);
+      return NextResponse.json({ error: 'Failed to fetch menu items' }, { status: 500 });
     }
-    
-    // Convert back to API format
-    const apiFormat = {
-      id: updatedItem.id,
-      name: updatedItem.name,
-      description: updatedItem.description,
-      price: updatedItem.price,
-      category: updatedItem.category,
-      is_veg: updatedItem.isVeg,
-      is_available: updatedItem.isAvailable,
-      image_url: updatedItem.imageUrl,
-      location_id: updatedItem.locationId,
-      created_at: updatedItem.createdAt,
-      updated_at: updatedItem.updatedAt
-    };
-    
-    return Response.json(apiFormat);
+
+    if (!data) {
+      return NextResponse.json([]);
+    }
+
+    return NextResponse.json(data);
   } catch (error) {
-    console.error('API PUT error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.error('Error in menu GET route:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: isAdmin } = await supabase.rpc('is_admin', { user_id: user.id });
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { name, price, category } = body;
+
+    if (!name || !price || !category) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from('menu_items')
+      .insert([body])
+      .select()
+      .returns<MenuItem[]>();
+
+    if (error) {
+      throw error;
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error in POST /api/menu:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' }, 
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: isAdmin } = await supabase.rpc('is_admin', { user_id: user.id });
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { id, ...updateData } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required for update' }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from('menu_items')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .returns<MenuItem[]>();
+
+    if (error) {
+      throw error;
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error in PUT /api/menu:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' }, 
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: isAdmin } = await supabase.rpc('is_admin', { user_id: user.id });
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
     const { id } = body;
-    
-    if (!id) return new Response(JSON.stringify({ error: 'id required' }), { 
-      status: 400,
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-    const success = deleteMenuItem(id);
-    
-    if (!success) {
-      return new Response(JSON.stringify({ error: 'Item not found' }), { 
-        status: 404,
-        headers: { 'Content-Type': 'application/json' }
-      });
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required for delete' }, { status: 400 });
     }
-    
-    return new Response(null, { status: 204 });
+
+    const { error } = await supabase.from('menu_items').delete().eq('id', id);
+
+    if (error) {
+      throw error;
+    }
+
+    return NextResponse.json({ message: 'Menu item deleted successfully' });
   } catch (error) {
-    console.error('API DELETE error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.error('Error in DELETE /api/menu:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' }, 
+      { status: 500 }
+    );
   }
 }
-
-
-

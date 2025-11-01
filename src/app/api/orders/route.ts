@@ -1,102 +1,113 @@
-import { NextRequest } from 'next/server';
-import { supabase } from '../../../lib/supabaseClient';
+import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
-export async function GET() {
-  try {
-    // Check if Supabase client is available
-    if (!supabase) {
-      return new Response(JSON.stringify({ 
-        error: 'Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local' 
-      }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+// POST handler for creating a new order
+export async function POST(request: Request) {
+    const supabase = await createClient();
 
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        users(*),
-        order_items(
-          *,
-          menu_items(*)
-        )
-      `)
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Supabase error:', error);
-      return new Response(JSON.stringify({ error: error.message }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+            return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+        }
+
+        // 1. Validate user profile and serviceable area
+        const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('city')
+            .eq('id', user.id)
+            .single();
+
+        if (profileError || !profile || !profile.city) {
+            return new NextResponse(JSON.stringify({ error: 'User profile is incomplete. Please provide a delivery address.' }), { status: 400 });
+        }
+
+        const { data: cityData, error: cityError } = await supabase
+            .from('serviceable_cities')
+            .select('name')
+            .eq('name', profile.city)
+            .single();
+
+        if (cityError || !cityData) {
+            return new NextResponse(JSON.stringify({ error: 'Sorry, delivery is not available in your city.' }), { status: 400 });
+        }
+
+        // 2. Get cart items from request body
+        const { cart, summary, locationId } = await request.json();
+
+        if (!cart || cart.length === 0 || !summary || !locationId) {
+            return new NextResponse(JSON.stringify({ error: 'Invalid order data.' }), { status: 400 });
+        }
+
+        // 3. Format cart items for the database function
+        const cartItemsForDb = (cart as Array<{ id: string | number; quantity: number }>).map((item) => ({
+            menu_item_id: item.id,
+            quantity: item.quantity,
+        }));
+
+        // 4. Call the transactional function in the database
+        const { data: newOrderId, error: createOrderError } = await supabase.rpc('create_order', {
+            p_user_id: user.id,
+            p_location_id: locationId,
+            p_delivery_charge: summary.deliveryCharge,
+            p_cart_items: cartItemsForDb,
+        });
+
+        if (createOrderError) {
+            console.error('Database function error:', createOrderError);
+            throw new Error(`Order creation failed: ${createOrderError.message || JSON.stringify(createOrderError)}`);
+        }
+
+        return NextResponse.json({ success: true, orderId: newOrderId });
+
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error('Error creating order:', msg, error);
+        return new NextResponse(JSON.stringify({ error: msg || 'Could not create order.' }), { status: 500 });
     }
-    
-    return Response.json(data || []);
-  } catch (error) {
-    console.error('API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    // Check if Supabase client is available
-    if (!supabase) {
-      return new Response(JSON.stringify({ 
-        error: 'Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local' 
-      }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+// GET handler for fetching a user's order history
+export async function GET(request: Request) {
+    const supabase = await createClient();
+
+    try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+            return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+        }
+
+        const { data: orders, error: ordersError } = await supabase
+            .from('orders')
+            .select(`
+                id,
+                order_number,
+                created_at,
+                status,
+                total_amount,
+                otp,
+                order_items (
+                    quantity,
+                    price,
+                    menu_items (
+                        name,
+                        image_url,
+                        is_veg
+                    )
+                )
+            `)
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+
+        if (ordersError) {
+            throw ordersError;
+        }
+
+        return NextResponse.json(orders);
+
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error('Error fetching orders:', msg);
+        return new NextResponse(JSON.stringify({ error: 'Could not fetch orders.' }), { status: 500 });
     }
-
-    const body = await req.json();
-    const { orderItems, ...orderData } = body;
-
-    // Start a transaction
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert([orderData])
-      .select('*')
-      .single();
-    
-    if (orderError) {
-      console.error('Supabase order creation error:', orderError);
-      return new Response(JSON.stringify({ error: orderError.message }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Insert order items
-    const orderItemsWithOrderId = orderItems.map((item: any) => ({
-      ...item,
-      order_id: order.id
-    }));
-
-    const { error: itemsError } = await supabase
-      .from('order_items')
-      .insert(orderItemsWithOrderId);
-    
-    if (itemsError) {
-      console.error('Supabase order items error:', itemsError);
-      return new Response(JSON.stringify({ error: itemsError.message }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    
-    return Response.json(order, { status: 201 });
-  } catch (error) {
-    console.error('API POST error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
 }

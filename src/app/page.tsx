@@ -1,669 +1,392 @@
 "use client";
-/**
- * Home Page Component: Shows Hero and Locations sections. Uses Anonymous Sign-in for public data access.
- */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { initializeApp, FirebaseApp, getApps, getApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, Auth, User, signOut, signInAnonymously } from 'firebase/auth'; // Using signInAnonymously
-import { getFirestore, onSnapshot, collection, query, DocumentData, Firestore, doc, getDoc as getDocFirestore } from 'firebase/firestore'; 
-import { Menu, X, MapPin, ShoppingCart, Utensils, Zap, Loader2, RefreshCw, Star, ArrowRight, Key, LogOut, Minus, Plus } from 'lucide-react';
-import confetti from 'canvas-confetti'; 
-
-// --- Global Constants (FIXED for delivery logic) ---
-const DELIVERY_CHARGE = 50;
-const FREE_DELIVERY_THRESHOLD = 500; 
-const ADMIN_ROLE_PATH = 'admins'; 
-
-// --- Firebase Setup Configuration (Hardcoded for Guaranteed Functionality) ---
-const firebaseConfig = {
-    apiKey: "AIzaSyDFGONbEvdW0m5HmhOYdBmiWDhkJBG6pS8", 
-    authDomain: "cafe-project-2025.firebaseapp.com",
-    projectId: "cafe-project-2025", 
-    storageBucket: "cafe-project-2025.firebasestorage.app",
-    messagingSenderId: "84755652433", 
-    appId: "1:84755652433:web:b60bc30d406bc48199fd70",
-};
-const PROJECT_ID = firebaseConfig.projectId || 'default-project-id';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useCart } from '@/context/CartContext';
+import { CartModal } from '@/components/CartModal'; // Import shared component
+import { useAuth } from '@/hooks/useAuth';
+import { Menu, X, MapPin, ShoppingCart, Utensils, Zap, Loader2, Star, ArrowRight, User, LogOut } from 'lucide-react';
 
 // --- Interfaces and Types ---
 interface ShopLocation { id: string; name: string; address: string; highlights: string; }
-interface MenuItem { id: string; name: string; description: string; price: number; category: string; isVeg: boolean; isAvailable: boolean; imageUrl: string; locationId?: string; }
-interface CartItem extends MenuItem { quantity: number; }
-interface CartSummary { subtotal: number; deliveryCharge: number; total: number; isFreeDelivery: boolean; }
 
-// --- Firebase Initialization and Auth Hook ---
-const useFirebaseSetup = () => {
-    const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
-    const [db, setDb] = useState<Firestore | null>(null);
-    const [auth, setAuth] = useState<Auth | null>(null);
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [isAdmin, setIsAdmin] = useState(false); 
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [authError, setAuthError] = useState<string | null>(null);
-
-    // 1. Initialize Firebase App
-    useEffect(() => {
-        if (!getApps().length) {
-            try {
-                const app = initializeApp(firebaseConfig as any);
-                setFirebaseApp(app);
-            } catch (error: any) {
-                setAuthError(`Initialization Failed: ${error.message}`);
-            }
-        } else {
-            setFirebaseApp(getApp());
-        }
-    }, []);
-
-    // 2. Setup Services and Authentication Listener + Role Check
-    useEffect(() => {
-        if (!firebaseApp || authError) return;
-
-        try {
-            const authInstance = getAuth(firebaseApp);
-            const dbInstance = getFirestore(firebaseApp);
-            setAuth(authInstance);
-            setDb(dbInstance);
-
-            const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-                if (user) {
-                    setCurrentUser(user);
-                    
-                    // --- RBAC CHECK (Admin check only) ---
-                    if (dbInstance) {
-                        // Try both paths: artifacts path first, then direct admins path
-                        const artifactsAdminRef = doc(dbInstance, `artifacts/${PROJECT_ID}/${ADMIN_ROLE_PATH}/${user.uid}`);
-                        const directAdminRef = doc(dbInstance, `${ADMIN_ROLE_PATH}/${user.uid}`);
-                        
-                        // Check artifacts path first
-                        let adminDoc = await getDocFirestore(artifactsAdminRef);
-                        
-                        // If not found in artifacts path, check direct admins path
-                        if (!adminDoc.exists()) {
-                            adminDoc = await getDocFirestore(directAdminRef);
-                        }
-
-                        if (adminDoc.exists() && adminDoc.data()?.role === 'super_admin') {
-                            setIsAdmin(true);
-                        } else {
-                            setIsAdmin(false);
-                        }
-                    }
-                } else {
-                    // --- ANONYMOUS SIGN-IN (Wapas ON kiya for Customers to get UID for Cart) ---
-                    signInAnonymously(authInstance)
-                        .then((credential) => {
-                            setCurrentUser(credential.user);
-                        })
-                        .catch((error: any) => {
-                            setAuthError(`Auth Failed: ${error.code}. Anonymous sign-in failed.`);
-                        });
-                    setIsAdmin(false);
-                }
-                setIsAuthReady(true);
-            });
-
-            return () => unsubscribe(); 
-        } catch (error: any) {
-            setAuthError(`Service Setup Failed: ${error.message}`);
-        }
-    }, [firebaseApp, authError]);
-    
-    // Sign out function for the client
-    const logoutClient = async () => {
-        if (auth) {
-            await signOut(auth);
-        }
-    };
-
-    return { db, auth, currentUser, isAdmin, isAuthReady, authError, logoutClient };
-};
-
-// --- Data Fetcher Hook (Fetches from PostgreSQL via API with fallback) ---
+// --- Data Fetcher Hook ---
 const useDataFetcher = () => {
     const [locations, setLocations] = useState<ShopLocation[]>([]);
-    const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-
-    // Hardcoded locations as fallback
-    const fallbackLocations: ShopLocation[] = [
-        {
-            id: 'loc1',
-            name: 'Rameshwaram Dosa Center',
-            address: '123 Main Street, Downtown',
-            highlights: 'Authentic South Indian Dosa & Idli'
-        },
-        {
-            id: 'loc2', 
-            name: 'Vighnaharta Sweet & Snacks Corner',
-            address: '456 Food Court, Mall Road',
-            highlights: 'Traditional Sweets & Savory Snacks'
-        },
-        {
-            id: 'loc3',
-            name: 'Vighnaharta Snacks Corner',
-            address: '789 Market Square, Central',
-            highlights: 'Fresh Snacks & Quick Bites'
-        }
-    ];
 
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                // Try to fetch locations from PostgreSQL via API
                 const locationsResponse = await fetch('/api/locations');
-                if (locationsResponse.ok) {
-                    const locationsData = await locationsResponse.json();
-                    if (locationsData.length > 0) {
-                        setLocations(locationsData);
-                        console.log('Homepage: Locations loaded from PostgreSQL:', locationsData.length);
-                    } else {
-                        // Use fallback locations if database is empty
-                        setLocations(fallbackLocations);
-                        console.log('Homepage: Using fallback locations');
-                    }
-                } else {
-                    // Use fallback locations if API fails
-                    setLocations(fallbackLocations);
-                    console.log('Homepage: API failed, using fallback locations');
-                }
-
-                // Try to fetch menu items from PostgreSQL via API
-                const menuResponse = await fetch('/api/menu');
-                if (menuResponse.ok) {
-                    const menuData = await menuResponse.json();
-                    
-                    // Map items to ensure they have proper structure
-                    const mappedItems = menuData.map((item: any) => ({
-                        id: item.id,
-                        name: item.name || 'Unnamed Item',
-                        description: item.description || '',
-                        price: item.price || 0,
-                        category: item.category || 'Other',
-                        isVeg: item.is_veg !== undefined ? item.is_veg : true,
-                        isAvailable: item.is_available !== undefined ? item.is_available : true,
-                        imageUrl: item.image_url || 'https://placehold.co/100x100/A0522D/ffffff?text=Food',
-                        locationId: item.location_id || 'loc1'
-                    }));
-                    
-                    console.log('Homepage: Menu items loaded:', mappedItems.length, 'items');
-                    setMenuItems(mappedItems);
-                } else {
-                    console.log('Homepage: No menu items in database');
-                    setMenuItems([]);
-                }
+                if (locationsResponse.ok) setLocations(await locationsResponse.json());
+                else console.error('Homepage: API failed to fetch locations');
             } catch (error) {
                 console.error('Error fetching data:', error);
-                // Use fallback locations on error
-                setLocations(fallbackLocations);
-                setMenuItems([]);
+                setLocations([]);
             } finally {
                 setIsLoading(false);
             }
         };
-
         fetchData();
     }, []);
 
-    return { locations, menuItems, isLoading };
-};
-
-// --- Cart Logic (Same as before) ---
-const useCart = (menuItems: MenuItem[]) => {
-    const [cart, setCart] = useState<CartItem[]>([]);
-    const [isCartOpen, setIsCartOpen] = useState(false);
-
-    const addToCart = useCallback((item: MenuItem) => {
-        if (!item.isAvailable) return;
-        setCart(prevCart => {
-            const existingItem = prevCart.find(i => i.id === item.id);
-            if (existingItem) {
-                return prevCart.map(i =>
-                    i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
-                );
-            } else {
-                const currentItem = menuItems.find(i => i.id === item.id);
-                if (!currentItem || !currentItem.isAvailable) return prevCart; 
-
-                return [...prevCart, { ...currentItem, quantity: 1 }];
-            }
-        });
-        setIsCartOpen(true);
-    }, [menuItems]);
-
-    const updateQuantity = useCallback((itemId: string, change: number) => {
-        setCart(prevCart => {
-            const updatedCart = prevCart.map(i =>
-                i.id === itemId ? { ...i, quantity: i.quantity + change } : i
-            ).filter(i => i.quantity > 0);
-            return updatedCart;
-        });
-    }, []);
-
-    const clearCart = useCallback(() => setCart([]), []);
-
-    const summary: CartSummary = useMemo(() => {
-        const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        const isFreeDelivery = subtotal >= FREE_DELIVERY_THRESHOLD;
-        const deliveryCharge = isFreeDelivery ? 0 : (subtotal > 0 ? DELIVERY_CHARGE : 0);
-        const total = subtotal + deliveryCharge;
-
-        return { subtotal, deliveryCharge, total, isFreeDelivery };
-    }, [cart]);
-
-    return {
-        cart,
-        addToCart,
-        updateQuantity,
-        clearCart,
-        summary,
-        isCartOpen,
-        setIsCartOpen
-    };
+    return { locations, isLoading };
 };
 
 // --- UI Components ---
-const Header = ({ onOpenCart, cartCount, isAdmin, currentUser }: { onOpenCart: () => void, cartCount: number, isAdmin: boolean, currentUser: User | null }) => {
+const Header = ({ onOpenCart, cartCount }: { onOpenCart: () => void, cartCount: number }) => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [mounted, setMounted] = useState(false);
+    const { user, isAuthReady, signOut } = useAuth();
+    const router = useRouter();
+
+    // Fix hydration issue - only render auth UI after mount
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const handleSignOut = async () => {
+        await signOut();
+        router.push('/');
+    };
 
     return (
-        <header className="fixed top-0 left-0 right-0 z-50 shadow-lg bg-white/95 backdrop-blur-sm">
+        <header className="fixed top-0 left-0 right-0 z-50 shadow-lg bg-white/95 backdrop-blur-sm border-b border-gray-100">
             <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-                {/* Logo and Name */}
-                <div className="flex items-center space-x-2">
-                    <Utensils className="h-7 w-7 text-red-700" />
-                    <span className={`text-2xl font-extrabold tracking-widest text-red-900`}>
-                        CAFÉ DELIGHTS
-                    </span>
-                </div>
-
-                {/* Desktop Navigation */}
-                <nav className="hidden md:flex space-x-8 items-center text-lg font-medium text-gray-700">
-                    <a href="#home" className="hover:text-red-700 transition duration-300">Home</a>
-                    <a href="#locations" className="hover:text-red-700 transition duration-300">Locations</a>
-                    <a href="/menu" className="hover:text-red-700 transition duration-300 font-bold">Menu</a> 
-                    
-                    
-                    <button
-                        onClick={onOpenCart}
-                        className="relative p-2 bg-red-700 text-white rounded-full shadow-lg hover:bg-red-800 transition duration-300 transform hover:scale-105"
-                        aria-label="View Shopping Cart"
-                    >
+                <Link href="/" className="flex items-center space-x-2">
+                    <Utensils className="h-7 w-7 text-orange-600" />
+                    <span className={`text-2xl font-extrabold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-700`}>Snackify</span>
+                </Link>
+                <nav className="hidden md:flex space-x-6 items-center text-lg font-medium text-gray-700">
+                    <a href="#home" className="hover:text-orange-600 transition">Home</a>
+                    <a href="#locations" className="hover:text-orange-600 transition">Locations</a>
+                    <Link href="/menu" className="hover:text-orange-600 transition font-bold">Menu</Link>
+                    {mounted && isAuthReady && (
+                        user ? (
+                            <>
+                                <Link href="/orders" className="flex items-center gap-1 hover:text-orange-600 transition">
+                                    <User className="h-5 w-5" />
+                                    My Orders
+                                </Link>
+                                <Link href="/checkout" className="flex items-center hover:text-orange-600 transition">
+                                    Profile
+                                </Link>
+                                <button onClick={handleSignOut} className="flex items-center gap-1 px-4 py-2 text-sm bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 rounded-lg hover:from-gray-200 hover:to-gray-300 transition shadow-sm">
+                                    <LogOut className="h-4 w-4" />
+                                    Sign Out
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <Link href="/login" className="px-4 py-2 text-sm bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 transition font-semibold shadow-md">
+                                    Sign In
+                                </Link>
+                            </>
+                        )
+                    )}
+                    <button onClick={onOpenCart} className="relative p-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all" aria-label="View Cart">
                         <ShoppingCart className="h-6 w-6" />
-                        {cartCount > 0 && (
-                            <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 bg-yellow-400 text-red-900 text-xs font-bold rounded-full border-2 border-white">
-                                {cartCount}
-                            </span>
-                        )}
+                        {cartCount > 0 && <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 bg-yellow-400 text-red-900 text-xs font-bold rounded-full">{cartCount}</span>}
                     </button>
                 </nav>
-
-                {/* Mobile Menu Button and Cart Icon */}
                 <div className="md:hidden flex items-center space-x-4">
-                    <button
-                        onClick={onOpenCart}
-                        className="relative p-2 bg-red-700 text-white rounded-full shadow-lg hover:bg-red-800 transition duration-300"
-                        aria-label="View Shopping Cart"
-                    >
+                    <button onClick={onOpenCart} className="relative p-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-full shadow-lg" aria-label="View Cart">
                         <ShoppingCart className="h-6 w-6" />
-                        {cartCount > 0 && (
-                            <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 bg-yellow-400 text-red-900 text-xs font-bold rounded-full border-2 border-white">
-                                {cartCount}
-                            </span>
-                        )}
+                        {cartCount > 0 && <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 bg-yellow-400 text-red-900 text-xs font-bold rounded-full">{cartCount}</span>}
                     </button>
-                    <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 text-gray-800 rounded-lg hover:bg-gray-100">
-                        {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-                    </button>
+                    <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 text-gray-800 rounded-lg">{isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}</button>
                 </div>
             </div>
-
-            {/* Mobile Navigation Dropdown */}
             {isMenuOpen && (
-                <div className="md:hidden bg-white shadow-xl py-2 transition-all duration-300 ease-in-out">
-                    <a href="#home" className="block px-4 py-2 text-gray-700 hover:bg-red-50">Home</a>
-                    <a href="#locations" className="block px-4 py-2 text-gray-700 hover:bg-red-50">Locations</a>
-                    {/* Link to the new menu page */}
-                    <a href="/menu" className="block px-4 py-2 text-gray-700 hover:bg-red-50 font-bold">Menu</a>
+                <div className="md:hidden bg-white shadow-xl py-2">
+                    <a href="#home" className="block px-4 py-2 hover:bg-gray-100">Home</a>
+                    <a href="#locations" className="block px-4 py-2 hover:bg-gray-100">Locations</a>
+                    <Link href="/menu" className="block px-4 py-2 font-bold hover:bg-gray-100">Menu</Link>
+                    {isAuthReady && (
+                        user ? (
+                            <>
+                                <Link href="/orders" className="block px-4 py-2 hover:bg-gray-100">My Orders</Link>
+                                <Link href="/checkout" className="block px-4 py-2 hover:bg-gray-100">Profile</Link>
+                                <button onClick={handleSignOut} className="block w-full text-left px-4 py-2 hover:bg-gray-100">Sign Out</button>
+                            </>
+                        ) : (
+                            <Link href="/login" className="block px-4 py-2 bg-red-700 text-white mx-4 my-2 rounded-lg text-center">Sign In</Link>
+                        )
+                    )}
                 </div>
             )}
         </header>
     );
 };
-const HeroSection = ({ onMenuClick }: { onMenuClick: () => void }) => (
-    <section id="home" className="relative pt-24 pb-16 min-h-[500px] flex items-center bg-gray-50 overflow-hidden">
-        <div className="container mx-auto px-4 z-10 grid md:grid-cols-2 gap-12 items-center">
-            {/* Text Content */}
-            <div className="animate-fade-in">
-                <p className="text-red-700 font-semibold text-lg mb-2 flex items-center">
-                    <Zap className="h-5 w-5 mr-2" />
-                    Authentic South Indian Flavors
-                </p>
-                <h1 className="text-5xl md:text-6xl font-extrabold text-red-900 leading-tight mb-4">
-                    The <span className="text-orange-600">Taste</span> of Tradition, Delivered.
-                </h1>
-                <p className="text-gray-600 text-xl mb-8 max-w-lg">
-                    Freshly prepared dosa, idli, and signature sweets from your favorite cafe locations.
-                </p>
-                {/* Redirects to the new /menu page */}
-                <a 
-                    href="/menu"
-                    className="flex items-center px-8 py-4 text-lg font-bold text-white bg-red-700 rounded-full shadow-xl hover:bg-red-800 transition duration-300 transform hover:scale-105 w-fit"
-                >
-                    Order Now
-                    <ArrowRight className="ml-2 h-5 w-5" />
-                </a>
-            </div>
 
-            {/* Image/Visual Element */}
-            <div className="hidden md:flex justify-center relative">
-                <div className="w-[450px] h-[450px] bg-orange-200 rounded-full absolute -right-20 -top-20 opacity-30"></div>
-                <img
-                    src="https://placehold.co/500x500/FF4500/ffffff?text=Delicious+Dosa"
-                    alt="Delicious Dosa"
-                    className="w-full max-w-md rounded-3xl shadow-2xl transform hover:rotate-1 transition duration-500 ease-in-out"
-                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/500x500/FF4500/ffffff?text=Delicious+Dosa' }}
-                />
+const HeroSection = () => (
+    <section id="home" className="relative pt-32 pb-24 bg-gradient-to-br from-orange-50 via-white to-red-50 overflow-hidden">
+        {/* Animated background blobs */}
+        <div className="absolute -left-40 -top-24 w-[420px] h-[420px] bg-gradient-to-br from-orange-300 to-orange-200 rounded-full opacity-20 blur-3xl animate-float" />
+        <div className="absolute right-[-120px] top-8 w-[360px] h-[360px] bg-gradient-to-br from-red-300 to-pink-200 rounded-full opacity-20 blur-3xl animate-float animation-delay-2000" />
+        <div className="absolute bottom-0 left-1/2 w-[500px] h-[500px] bg-gradient-to-t from-yellow-200 to-transparent rounded-full opacity-10 blur-2xl" />
+        
+        <div className="container mx-auto px-4 relative z-10">
+            <div className="max-w-5xl mx-auto text-center">
+                {/* Badge */}
+                <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur-sm border border-orange-200 rounded-full px-5 py-2 mb-8 shadow-lg">
+                    <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                    </span>
+                    <span className="text-sm font-semibold text-gray-700">Now delivering in Badlapur, Ambernath, Ulhasnagar & Vangani</span>
+                </div>
+                
+                {/* Main Heading */}
+                <h1 className="text-6xl md:text-7xl font-black leading-tight mb-6">
+                    <span className="block text-gray-900">Cravings met.</span>
+                    <span className="block text-transparent bg-clip-text bg-gradient-to-r from-orange-600 via-red-600 to-pink-600">
+                        Delivered fresh.
+                    </span>
+                </h1>
+                
+                {/* Subheading */}
+                <p className="text-xl md:text-2xl text-gray-600 mb-10 max-w-3xl mx-auto leading-relaxed">
+                    Hand-crafted <span className="font-semibold text-orange-600">dosas</span>, 
+                    <span className="font-semibold text-red-600"> sweets</span> and 
+                    <span className="font-semibold text-pink-600"> snacks</span> from our neighbourhood kitchens — 
+                    made fresh daily, delivered hot to your doorstep.
+                </p>
+                
+                {/* CTA Buttons */}
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
+                    <Link href="/menu" className="group relative inline-flex items-center gap-3 px-8 py-4 text-lg font-bold text-white bg-gradient-to-r from-orange-600 to-red-600 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 transform transition-all duration-300 overflow-hidden">
+                        <span className="absolute inset-0 bg-gradient-to-r from-orange-700 to-red-700 opacity-0 group-hover:opacity-100 transition-opacity"></span>
+                        <span className="relative">Order Now</span>
+                        <ArrowRight className="relative h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                    <a href="#locations" className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold text-gray-700 bg-white border-2 border-gray-200 rounded-full hover:border-orange-300 hover:bg-orange-50 transition-all duration-300 shadow-md">
+                        <MapPin className="h-5 w-5" />
+                        View Locations
+                    </a>
+                </div>
+                
+                {/* Stats/Trust Indicators */}
+                <div className="grid grid-cols-3 gap-8 max-w-2xl mx-auto pt-8 border-t border-gray-200">
+                    <div className="text-center">
+                        <div className="text-3xl font-bold text-orange-600 mb-1">500+</div>
+                        <div className="text-sm text-gray-600">Orders Delivered</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-3xl font-bold text-red-600 mb-1">30min</div>
+                        <div className="text-sm text-gray-600">Avg. Delivery</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-3xl font-bold text-pink-600 mb-1">4.8★</div>
+                        <div className="text-sm text-gray-600">Customer Rating</div>
+                    </div>
+                </div>
             </div>
         </div>
-        {/* Background color wave for effect */}
-        <div className="absolute bottom-0 left-0 w-full h-1/4 bg-gradient-to-t from-white to-transparent"></div>
     </section>
 );
-const LocationCard = ({ location }: { location: ShopLocation }) => {
-    // Get appropriate image based on location name
+
+const LocationCard = ({ location, index }: { location: ShopLocation, index: number }) => {
     const getLocationImage = (locationName: string) => {
-        if (locationName.includes('Rameshwaram')) {
-            return 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
-        } else if (locationName.includes('Vighnaharta Sweet')) {
-            return 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
-        } else if (locationName.includes('Vighnaharta Snacks')) {
-            return 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
-        }
-        return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80';
+        if (locationName.includes('Rameshwaram')) return 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=1200&q=80';
+        if (locationName.includes('Vighnaharta Sweet')) return 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?auto=format&fit=crop&w=1200&q=80';
+        if (locationName.includes('Vighnaharta Snacks')) return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80';
+        // Default warm food image
+        return 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80';
     };
 
+    const getLocationDescription = (locationName: string) => {
+        if (locationName.includes('Rameshwaram')) return 'Famous for slow-fermented dosas and artisanal chutneys — a local favourite for breakfast and late-night cravings.';
+        if (locationName.includes('Vighnaharta Sweet')) return 'A traditional sweets counter with age-old recipes. Perfect for festivals and sweet-tooth moments.';
+        if (locationName.includes('Vighnaharta Snacks')) return 'Quick bites and savoury snacks prepared fresh — ideal for office lunches and on-the-go meals.';
+        return 'A neighbourhood outlet serving freshly prepared, comforting South-Indian snacks made to order.';
+    };
     return (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-2xl transition duration-300 transform hover:-translate-y-1 overflow-hidden">
-            {/* Location Image */}
-            <div className="h-48 w-full overflow-hidden">
+        <div className="group bg-white rounded-3xl shadow-lg border border-gray-100 hover:shadow-2xl hover:border-orange-200 transition-all duration-500 transform hover:-translate-y-2 overflow-hidden opacity-0 animate-fade-in" style={{ animationDelay: `${index * 150}ms` }}>
+            {/* Image Container */}
+            <div className="relative h-64 w-full overflow-hidden">
                 <img 
-                    src={getLocationImage(location.name)}
-                    alt={location.name}
-                    className="w-full h-full object-cover hover:scale-105 transition duration-300"
-                    onError={(e) => { 
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&h=300&fit=crop&crop=center';
-                    }}
+                    src={getLocationImage(location.name)} 
+                    alt={location.name} 
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
+                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80'; }} 
                 />
+                {/* Gradient Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
             </div>
             
-            {/* Location Info */}
+            {/* Content */}
             <div className="p-6">
-                <div className="flex items-center mb-3">
-                    <MapPin className="h-6 w-6 text-red-700 mr-3" />
-                    <h3 className="text-xl font-bold text-red-900">{location.name}</h3>
+                <div className="flex items-start gap-3 mb-4">
+                    <div className="p-2 bg-orange-100 rounded-lg">
+                        <MapPin className="h-6 w-6 text-orange-600" />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="text-2xl font-bold text-gray-900 mb-1 group-hover:text-orange-600 transition-colors">{location.name}</h3>
+                        <p className="text-gray-600 text-sm">{location.address}</p>
+                    </div>
                 </div>
-                <p className="text-gray-700 mb-2">{location.address}</p>
-                <div className="flex items-center text-orange-600 font-medium text-sm">
-                    <Star className="h-4 w-4 fill-orange-500 mr-1" />
-                    {location.highlights}
+                
+                {/* Description */}
+                <p className="text-gray-700 mb-4 leading-relaxed">
+                    {getLocationDescription(location.name)}
+                </p>
+                
+                {/* Footer */}
+                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <div className="flex items-center text-orange-600 font-semibold text-sm">
+                        <Star className="h-5 w-5 fill-orange-500 mr-2" />
+                        {location.highlights}
+                    </div>
+                    <Link 
+                        href="/menu" 
+                        className="inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700 group/link"
+                    >
+                        View Menu
+                        <ArrowRight className="h-4 w-4 group-hover/link:translate-x-1 transition-transform" />
+                    </Link>
                 </div>
             </div>
         </div>
     );
 };
-const LocationsSection = ({ locations, isLoading }: { locations: ShopLocation[], isLoading: boolean }) => (
-    <section id="locations" className="py-16 bg-white">
-        <div className="container mx-auto px-4">
-            <h2 className="text-4xl font-extrabold text-center text-red-900 mb-4">
-                Our Cafe Locations
-            </h2>
-            <p className="text-center text-gray-600 mb-10 text-lg max-w-3xl mx-auto">
-                Select your nearest outlet to view the available menu and place your order.
-            </p>
 
-            {isLoading ? (
-                <div className="text-center py-10">
-                    <Loader2 className="h-8 w-8 animate-spin text-red-700 mx-auto" />
-                    <p className="text-gray-600 mt-2">Loading locations...</p>
+const LocationsSection = ({ locations, isLoading }: { locations: ShopLocation[], isLoading: boolean }) => (
+    <section id="locations" className="py-24 bg-white relative overflow-hidden">
+        {/* Decorative elements */}
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent"></div>
+        
+        <div className="container mx-auto px-4">
+            <div className="max-w-3xl mx-auto text-center mb-16">
+                <h2 className="text-5xl md:text-6xl font-black text-gray-900 mb-4">
+                    Our <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Locations</span>
+                </h2>
+                <p className="text-xl text-gray-600 leading-relaxed">
+                    Choose your nearest outlet and explore our handcrafted menu — each location brings its own specialty.
+                </p>
+            </div>
+            
+            {isLoading && locations.length === 0 ? (
+                <div className="text-center py-20">
+                    <Loader2 className="h-12 w-12 animate-spin text-orange-600 mx-auto mb-4" />
+                    <p className="text-gray-600 text-lg">Loading our locations...</p>
                 </div>
             ) : (
-                <div className="grid md:grid-cols-3 gap-8">
-                    {locations.map(loc => (
-                        <LocationCard key={loc.id} location={loc} />
-                    ))}
+                <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
+                    {locations.map((loc, index) => (<LocationCard key={loc.id} location={loc} index={index} />))}
                 </div>
             )}
         </div>
     </section>
 );
 
-const CartModal = ({
-    cart,
-    summary,
-    isOpen,
-    onClose,
-    updateQuantity,
-    clearCart
-}: {
-    cart: CartItem[],
-    summary: CartSummary,
-    isOpen: boolean,
-    onClose: () => void,
-    updateQuantity: (itemId: string, change: number) => void,
-    clearCart: () => void
-}) => {
-    // Confetti is moved outside this component to the App component's handleCheckout to avoid re-rendering issues
-    const handleCheckout = () => {
-        if (summary.total > 0) {
-            confetti({
-                particleCount: 100,
-                spread: 70,
-                origin: { y: 0.6 }
-            });
-            alert('Order Placed Successfully! (Payment Gateway Integration Pending)');
-            clearCart();
-        }
-    };
-    
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex justify-end transition-opacity duration-300" onClick={onClose}>
-            <div
-                className="w-full max-w-md bg-white h-full shadow-2xl overflow-y-auto transform transition-transform duration-300 ease-in-out"
-                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
-            >
-                {/* Header */}
-                <div className="sticky top-0 bg-red-700 text-white p-4 flex justify-between items-center shadow-md">
-                    <h2 className="text-2xl font-bold flex items-center">
-                        <ShoppingCart className="h-6 w-6 mr-3" />
-                        Your Order ({cart.length} items)
-                    </h2>
-                    <button onClick={onClose} className="p-2 hover:bg-red-600 rounded-full transition">
-                        <X className="h-6 w-6" />
-                    </button>
-                </div>
-
-                {/* Cart Items */}
-                <div className="p-4 space-y-4 flex-grow">
-                    {cart.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">
-                            <Utensils className="h-10 w-10 mx-auto mb-4" />
-                            <p className="text-lg">Your cart is empty. Start adding some delicious items!</p>
-                        </div>
-                    ) : (
-                        cart.map(item => (
-                            <div key={item.id} className="flex items-center justify-between border-b pb-4">
-                                <div className="flex items-center space-x-3">
-                                    <img src={item.imageUrl} alt={item.name} className="w-12 h-12 rounded-lg object-cover" />
-                                    <div>
-                                        <p className="font-semibold text-gray-800">{item.name}</p>
-                                        <p className="text-sm text-gray-500">₹{item.price} x {item.quantity}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <button
-                                        onClick={() => updateQuantity(item.id, -1)}
-                                        className="p-1 bg-gray-100 rounded-full hover:bg-red-100 text-red-700 transition"
-                                        aria-label="Decrease Quantity"
-                                    >
-                                        <Minus className="h-4 w-4" />
-                                    </button>
-                                    <span className="font-bold w-4 text-center">{item.quantity}</span>
-                                    <button
-                                        onClick={() => updateQuantity(item.id, 1)}
-                                        className="p-1 bg-gray-100 rounded-full hover:bg-red-100 text-red-700 transition"
-                                        aria-label="Increase Quantity"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                    {cart.length > 0 && (
-                        <button
-                            onClick={clearCart}
-                            className="w-full text-center text-red-600 hover:text-red-800 mt-4 text-sm font-medium transition"
-                        >
-                            Clear Cart
-                        </button>
-                    )}
-                </div>
-
-                {/* Summary and Checkout Button */}
-                <div className="sticky bottom-0 bg-gray-50 p-4 border-t-2 border-red-100 shadow-inner">
-                    <div className="space-y-2 text-gray-700 font-medium">
-                        <div className="flex justify-between">
-                            <span>Subtotal:</span>
-                            <span>₹{summary.subtotal}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>Delivery:</span>
-                            <span className={summary.isFreeDelivery ? "text-green-600 font-bold" : ""}>
-                                {summary.isFreeDelivery ? 'FREE' : `₹${summary.deliveryCharge}`}
-                            </span>
-                        </div>
-                        {summary.isFreeDelivery ? (
-                            <p className="text-center text-green-600 text-xs font-semibold pt-1">
-                                🎉 Congratulations! Your delivery is FREE (Order over ₹500).
-                            </p>
-                        ) : (
-                            <p className="text-center text-red-500 text-xs pt-1">
-                                Order for ₹{(FREE_DELIVERY_THRESHOLD - summary.subtotal).toFixed(2)} more to get FREE Delivery!
-                            </p>
-                        )}
-                        <div className="flex justify-between text-2xl font-extrabold text-red-900 border-t pt-3 mt-3">
-                            <span>Total:</span>
-                            <span>₹{summary.total}</span>
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={handleCheckout}
-                        disabled={cart.length === 0}
-                        className={`w-full py-4 mt-6 text-xl font-bold text-white rounded-xl transition duration-300 transform hover:scale-[1.01] ${
-                            cart.length === 0
-                                ? 'bg-gray-400 cursor-not-allowed'
-                                : 'bg-orange-600 hover:bg-orange-700 shadow-2xl'
-                        }`}
-                    >
-                        Proceed to Checkout
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
 // --- Main App Component ---
-
 const App = () => {
-    // 1. Firebase Setup and Auth
-    const { db, auth, currentUser, isAdmin, isAuthReady, authError } = useFirebaseSetup();
+    const { locations, isLoading } = useDataFetcher();
+    const { cartCount, setIsCartOpen } = useCart();
 
-    // 2. Data Fetching from PostgreSQL via API
-    const { locations, menuItems, isLoading } = useDataFetcher();
-
-    // 3. Cart State and Logic
-    const { cart, addToCart, updateQuantity, clearCart, summary, isCartOpen, setIsCartOpen } = useCart(menuItems);
-    const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-    const scrollToMenu = () => {
-        // Since we removed the menu section from this page, this button should redirect
-        window.location.href = '/menu';
-    };
-    
-    // Show initial loading screen while auth and data are setting up
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
                 <Loader2 className="h-10 w-10 animate-spin text-red-700 mb-4" />
-                <p className="text-lg text-gray-700">Loading Configuration and Authentication...</p>
-                {/* Authentication Error Message (Only visible if an error occurs) */}
-                {authError && (
-                    <div className="mt-6 p-4 bg-red-100 border-l-4 border-red-500 text-red-700 max-w-md rounded-lg shadow-md">
-                        <p className="font-bold">Authentication Error!</p>
-                        <p className="text-sm">Please check your Firebase keys and ensure Anonymous sign-in is enabled.</p>
-                        <code className="block mt-2 p-2 bg-red-200 text-xs break-words">{authError}</code>
-                    </div>
-                )}
+                <p className="text-lg text-gray-700">Loading Cafe Delights...</p>
             </div>
         );
     }
-    
-
-    
-    // No fallback needed - always show the homepage with empty sections
-
 
     return (
         <div className="min-h-screen bg-gray-100 font-sans">
-            <style jsx global>{`
-                /* Font: Inter or system default */
-                body {
-                    font-family: 'Inter', sans-serif;
-                    background-color: #f3f4f6; /* Light gray background */
-                }
-            `}</style>
-
-            <Header onOpenCart={() => setIsCartOpen(true)} cartCount={cartCount} isAdmin={isAdmin} currentUser={currentUser} /> 
-
+            <Header onOpenCart={() => setIsCartOpen(true)} cartCount={cartCount} /> 
             <main className="pt-16">
-                <HeroSection onMenuClick={scrollToMenu} />
+                <HeroSection />
                 <LocationsSection locations={locations} isLoading={isLoading && locations.length === 0} />
-                {/* Menu Section Removed from Home Page */}
             </main>
-
-            <footer className="bg-red-900 text-white py-8">
-                <div className="container mx-auto px-4 text-center">
-                    <div className="flex justify-center space-x-6 mb-4">
-                        <a href="#home" className="hover:text-red-300 transition">Home</a>
-                        <a href="#locations" className="hover:text-red-300 transition">Locations</a>
-                        <a href="/menu" className="hover:text-red-300 transition font-bold">Menu</a>
+            <footer className="bg-gradient-to-br from-gray-900 via-red-900 to-gray-900 text-white py-12 relative overflow-hidden">
+                {/* Decorative gradient line */}
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 via-red-500 to-pink-500"></div>
+                
+                <div className="container mx-auto px-4 relative z-10">
+                    <div className="grid md:grid-cols-4 gap-8 mb-8">
+                        {/* Brand */}
+                        <div>
+                            <div className="flex items-center gap-2 mb-4">
+                                <Utensils className="h-6 w-6 text-orange-400" />
+                                <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-400">Snackify</span>
+                            </div>
+                            <p className="text-gray-400 text-sm leading-relaxed">
+                                Authentic South Indian flavors delivered fresh to your doorstep. Made with love, served with care.
+                            </p>
+                        </div>
                         
-
+                        {/* Quick Links */}
+                        <div>
+                            <h4 className="text-white font-bold mb-4">Quick Links</h4>
+                            <div className="flex flex-col space-y-2">
+                                <a href="#home" className="text-gray-400 hover:text-orange-400 transition text-sm">Home</a>
+                                <a href="#locations" className="text-gray-400 hover:text-orange-400 transition text-sm">Locations</a>
+                                <Link href="/menu" className="text-gray-400 hover:text-orange-400 transition font-semibold text-sm">Menu</Link>
+                                <Link href="/orders" className="text-gray-400 hover:text-orange-400 transition text-sm">My Orders</Link>
+                            </div>
+                        </div>
+                        
+                        {/* Contact Section */}
+                        <div>
+                            <h4 className="text-white font-bold mb-4">Contact</h4>
+                            <div className="flex flex-col space-y-3">
+                                <a 
+                                    href="tel:+918308990205" 
+                                    className="text-gray-400 hover:text-orange-400 transition text-sm flex items-center gap-2 group"
+                                >
+                                    <span className="bg-orange-500/10 p-2 rounded-lg group-hover:bg-orange-500/20 transition">📞</span>
+                                    <span>+91 83089 90205</span>
+                                </a>
+                                <p className="text-gray-500 text-xs mt-2">Available 9 AM - 9 PM</p>
+                            </div>
+                        </div>
+                        
+                        {/* Delivery Info */}
+                        <div>
+                            <h4 className="text-white font-bold mb-4">Delivery Areas</h4>
+                            <p className="text-gray-400 text-sm leading-relaxed">
+                                Currently serving Badlapur, Ambernath, Ulhasnagar, and Vangani with contactless delivery.
+                            </p>
+                            <div className="mt-4 inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
+                                <Zap className="h-4 w-4 text-orange-400" />
+                                <span className="text-sm text-orange-300 font-medium">30-min delivery</span>
+                            </div>
+                        </div>
                     </div>
-                    <p className="text-sm border-t border-red-700 pt-4">
-                        &copy; {new Date().getFullYear()} CAFÉ DELIGHTS. All rights reserved.
-                    </p>
-                    <p className="text-xs mt-1 text-red-400">
-                        Designed for high traffic and scalability (Next.js + Firestore).
-                    </p>
+                    
+                    {/* Bottom Bar */}
+                    <div className="border-t border-gray-700 pt-6 text-center">
+                        <p className="text-sm text-gray-400">
+                            &copy; {new Date().getFullYear()} <span className="text-orange-400 font-semibold">Snackify</span>. All rights reserved.
+                        </p>
+                        <p className="text-xs text-gray-500 mt-3">Built with Next.js & Supabase — Scalable, Fast & Secure</p>
+                        
+                        {/* Developer Credit */}
+                        <div className="mt-4 pt-4 border-t border-gray-800">
+                            <a 
+                                href="https://www.linkedin.com/in/sachin-kumar-607a73345?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 text-gray-500 hover:text-orange-400 transition-all group"
+                            >
+                                <span className="text-xs">Developed by</span>
+                                <span className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-3 py-1 rounded-full text-xs font-semibold group-hover:scale-105 transition-transform shadow-lg">
+                                    Sachin Kumar
+                                </span>
+                                <svg className="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </footer>
-
-            <CartModal
-                cart={cart}
-                summary={summary}
-                isOpen={isCartOpen}
-                onClose={() => setIsCartOpen(false)}
-                updateQuantity={updateQuantity}
-                clearCart={clearCart}
-            />
+            <CartModal />
         </div>
     );
 };

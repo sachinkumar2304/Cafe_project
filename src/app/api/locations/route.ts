@@ -1,73 +1,30 @@
-import { NextRequest } from 'next/server';
-import { supabase } from '../../../lib/supabaseClient';
+import { createClient } from '@/lib/supabase/server';
+import { NextResponse } from 'next/server';
+import { ShopLocation } from '@/lib/menuStorage';
 
 export async function GET() {
   try {
-    // Always use localStorage-based storage for consistency
-    const locations = [
-      {
-        id: 'loc1',
-        name: 'Rameshwaram Dosa Center',
-        address: '123 Main Street, Downtown',
-        highlights: 'Famous for Traditional Dosas'
-      },
-      {
-        id: 'loc2',
-        name: 'Vighnaharta Sweet & Snacks Corner',
-        address: '456 Park Avenue, Midtown',
-        highlights: 'Best South Indian Sweets'
-      },
-      {
-        id: 'loc3',
-        name: 'Vighnaharta Snacks Corner',
-        address: '789 Oak Street, Uptown',
-        highlights: 'Quick Bites & Snacks'
-      }
-    ];
-    
-    return Response.json(locations);
-  } catch (error) {
-    console.error('API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    // Check if Supabase client is available
-    if (!supabase) {
-      return new Response(JSON.stringify({ 
-        error: 'Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local' 
-      }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    const body = await req.json();
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from('locations')
-      .insert([{ ...body }])
       .select('*')
-      .single();
-    
+      .order('name', { ascending: true })
+      .returns<ShopLocation[]>();
+
     if (error) {
-      console.error('Supabase POST error:', error);
-      return new Response(JSON.stringify({ error: error.message }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      console.error('Supabase error fetching locations:', error);
+      return NextResponse.json({ error: 'Failed to fetch locations' }, { status: 500 });
     }
-    
-    return Response.json(data, { status: 201 });
+
+    // If no locations in database, return default locations
+    if (!data || data.length === 0) {
+      const { defaultLocations } = await import('@/lib/menuStorage');
+      return NextResponse.json(defaultLocations);
+    }
+
+    return NextResponse.json(data);
   } catch (error) {
-    console.error('API POST error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.error('Error in locations GET route:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
