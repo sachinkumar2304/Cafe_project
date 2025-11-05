@@ -9,24 +9,64 @@ export const CartModal = () => {
     const router = useRouter();
     const supabase = createClient();
     const { cart, summary, isCartOpen, updateQuantity, clearCart, setIsCartOpen, locationName } = useCart();
+    const [isCheckingOut, setIsCheckingOut] = React.useState(false);
 
     const handleCheckout = async () => {
+        if (isCheckingOut) {
+            console.log('⏳ Already processing checkout, please wait...');
+            return;
+        }
+
         console.log('🛒 Checkout button clicked!');
         console.log('Cart items:', cart.length);
+        
+        setIsCheckingOut(true);
         
         try {
             const { data: { session }, error } = await supabase.auth.getSession();
             console.log('Session check:', session ? 'Logged in' : 'Not logged in', error);
             
+            if (error) {
+                console.error('Session error:', error);
+                throw new Error('Failed to check login status');
+            }
+            
             if (!session) {
                 console.log('Redirecting to login...');
-                router.push('/login?redirect_to=/checkout');
+                // Try router.push first, fallback to window.location
+                try {
+                    router.push('/login?redirect_to=/checkout');
+                    // If router doesn't navigate within 1 second, use window.location
+                    setTimeout(() => {
+                        if (isCheckingOut) {
+                            console.log('Router failed, using window.location...');
+                            window.location.href = '/login?redirect_to=/checkout';
+                        }
+                    }, 1000);
+                } catch (navError) {
+                    console.error('Router navigation failed:', navError);
+                    window.location.href = '/login?redirect_to=/checkout';
+                }
             } else {
                 console.log('Redirecting to checkout...');
-                router.push('/checkout');
+                try {
+                    router.push('/checkout');
+                    // Fallback to window.location if router fails
+                    setTimeout(() => {
+                        if (isCheckingOut) {
+                            console.log('Router failed, using window.location...');
+                            window.location.href = '/checkout';
+                        }
+                    }, 1000);
+                } catch (navError) {
+                    console.error('Router navigation failed:', navError);
+                    window.location.href = '/checkout';
+                }
             }
         } catch (err) {
             console.error('Checkout error:', err);
+            alert('Something went wrong. Please try again.');
+            setIsCheckingOut(false); // Reset immediately on error
         }
     };
     
@@ -135,7 +175,7 @@ export const CartModal = () => {
                         ) : (
                             <div className="bg-gradient-to-r from-orange-100 to-red-100 border-2 border-orange-300 rounded-xl p-3 text-center">
                                 <p className="text-orange-800 text-sm font-bold">
-                                    Add ₹{(200 - summary.subtotal).toFixed(0)} more for FREE Delivery!
+                                    Add ₹{Math.max(0, 300 - summary.subtotal).toFixed(0)} more for FREE Delivery!
                                 </p>
                             </div>
                         )}
@@ -148,14 +188,14 @@ export const CartModal = () => {
                     </div>
                     <button 
                         onClick={handleCheckout} 
-                        disabled={cart.length === 0} 
+                        disabled={cart.length === 0 || isCheckingOut} 
                         className={`w-full py-4 text-xl font-black rounded-2xl transition-all duration-300 shadow-lg ${
-                            cart.length === 0 
+                            cart.length === 0 || isCheckingOut
                                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
                                 : 'bg-gradient-to-r from-orange-600 via-red-600 to-pink-600 hover:from-orange-700 hover:via-red-700 hover:to-pink-700 text-white hover:shadow-2xl hover:scale-105'
                         }`}
                     >
-                        {cart.length === 0 ? 'Cart is Empty' : `Proceed to Checkout →`}
+                        {cart.length === 0 ? 'Cart is Empty' : isCheckingOut ? 'Processing...' : 'Proceed to Checkout →'}
                     </button>
                 </div>
             </div>

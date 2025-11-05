@@ -45,7 +45,15 @@ const Header = ({ onOpenCart, cartCount }: { onOpenCart: () => void, cartCount: 
     // Fix hydration issue - only render auth UI after mount
     useEffect(() => {
         setMounted(true);
+        console.log('🎯 Header mounted - Auth ready:', isAuthReady, 'User:', user ? 'Logged in' : 'Guest');
     }, []);
+
+    // Debug auth state changes
+    useEffect(() => {
+        if (mounted && isAuthReady) {
+            console.log('🔐 Auth state updated - User:', user?.email || 'Not logged in');
+        }
+    }, [mounted, isAuthReady, user]);
 
     const handleSignOut = async () => {
         await signOut();
@@ -101,15 +109,15 @@ const Header = ({ onOpenCart, cartCount }: { onOpenCart: () => void, cartCount: 
             </div>
             {isMenuOpen && (
                 <div className="md:hidden bg-white shadow-xl py-2">
-                    <a href="#home" className="block px-4 py-2 hover:bg-gray-100">Home</a>
-                    <a href="#locations" className="block px-4 py-2 hover:bg-gray-100">Locations</a>
-                    <Link href="/menu" className="block px-4 py-2 font-bold hover:bg-gray-100">Menu</Link>
-                    {isAuthReady && (
+                    <a href="#home" className="block px-4 py-2 text-gray-900 hover:bg-gray-100">Home</a>
+                    <a href="#locations" className="block px-4 py-2 text-gray-900 hover:bg-gray-100">Locations</a>
+                    <Link href="/menu" className="block px-4 py-2 font-bold text-gray-900 hover:bg-gray-100">Menu</Link>
+                    {mounted && isAuthReady && (
                         user ? (
                             <>
-                                <Link href="/orders" className="block px-4 py-2 hover:bg-gray-100">My Orders</Link>
-                                <Link href="/checkout" className="block px-4 py-2 hover:bg-gray-100">Profile</Link>
-                                <button onClick={handleSignOut} className="block w-full text-left px-4 py-2 hover:bg-gray-100">Sign Out</button>
+                                <Link href="/orders" className="block px-4 py-2 text-gray-900 hover:bg-gray-100">My Orders</Link>
+                                <Link href="/checkout" className="block px-4 py-2 text-gray-900 hover:bg-gray-100">Profile</Link>
+                                <button onClick={handleSignOut} className="block w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100">Sign Out</button>
                             </>
                         ) : (
                             <Link href="/login" className="block px-4 py-2 bg-red-700 text-white mx-4 my-2 rounded-lg text-center">Sign In</Link>
@@ -190,11 +198,18 @@ const HeroSection = () => (
 
 const LocationCard = ({ location, index }: { location: ShopLocation, index: number }) => {
     const getLocationImage = (locationName: string) => {
-        if (locationName.includes('Rameshwaram')) return 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=1200&q=80';
-        if (locationName.includes('Vighnaharta Sweet')) return 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?auto=format&fit=crop&w=1200&q=80';
-        if (locationName.includes('Vighnaharta Snacks')) return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80';
-        // Default warm food image
-        return 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80';
+        // High-quality food images with better fallbacks
+        if (locationName.includes('Rameshwaram')) {
+            return 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=800&q=80'; // Dosa image
+        }
+        if (locationName.includes('Vighnaharta Sweet')) {
+            return 'https://images.unsplash.com/photo-1601000938259-9e92002320b2?w=800&q=80'; // Indian sweets
+        }
+        if (locationName.includes('Vighnaharta Snacks')) {
+            return 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=800&q=80'; // Indian snacks
+        }
+        // Default food image
+        return 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=800&q=80';
     };
 
     const getLocationDescription = (locationName: string) => {
@@ -206,12 +221,18 @@ const LocationCard = ({ location, index }: { location: ShopLocation, index: numb
     return (
         <div className="group bg-white rounded-3xl shadow-lg border border-gray-100 hover:shadow-2xl hover:border-orange-200 transition-all duration-500 transform hover:-translate-y-2 overflow-hidden opacity-0 animate-fade-in" style={{ animationDelay: `${index * 150}ms` }}>
             {/* Image Container */}
-            <div className="relative h-64 w-full overflow-hidden">
+            <div className="relative h-64 w-full overflow-hidden bg-gradient-to-br from-orange-100 to-red-100">
                 <img 
                     src={getLocationImage(location.name)} 
                     alt={location.name} 
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
-                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80'; }} 
+                    loading="lazy"
+                    onError={(e) => { 
+                        const img = e.target as HTMLImageElement;
+                        if (!img.src.includes('placeholder')) {
+                            img.src = 'https://placehold.co/800x600/fb923c/ffffff?text=' + encodeURIComponent(location.name);
+                        }
+                    }} 
                 />
                 {/* Gradient Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
@@ -289,9 +310,15 @@ const App = () => {
 
     if (isLoading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
-                <Loader2 className="h-10 w-10 animate-spin text-red-700 mb-4" />
-                <p className="text-lg text-gray-700">Loading Cafe Delights...</p>
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50 p-6">
+                <div className="text-center">
+                    <Utensils className="h-16 w-16 text-orange-600 mx-auto mb-4 animate-bounce" />
+                    <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600 mb-4">
+                        Snackify
+                    </h1>
+                    <Loader2 className="h-8 w-8 animate-spin text-orange-600 mx-auto mb-3" />
+                    <p className="text-lg text-gray-700 font-medium">Loading delicious food...</p>
+                </div>
             </div>
         );
     }

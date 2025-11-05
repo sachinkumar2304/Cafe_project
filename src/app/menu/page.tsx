@@ -127,7 +127,15 @@ const MenuHeader = ({ locations, activeLocationId, setActiveLocationId, cartCoun
 
     useEffect(() => {
         setMounted(true);
+        console.log('🍔 Menu Header mounted - Auth ready:', isAuthReady, 'User:', user ? 'Logged in' : 'Guest');
     }, []);
+
+    // Debug auth state changes
+    useEffect(() => {
+        if (mounted && isAuthReady) {
+            console.log('🔐 Menu Auth state - User:', user?.email || 'Not logged in');
+        }
+    }, [mounted, isAuthReady, user]);
 
     const handleSignOut = async () => {
         await signOut();

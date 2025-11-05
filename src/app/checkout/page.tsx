@@ -108,6 +108,7 @@ const CheckoutPage = () => {
     };
 
     const handlePlaceOrder = async () => {
+        console.log('📦 Placing order...');
         setPlacingOrder(true);
         setError(null);
         try {
@@ -119,11 +120,20 @@ const CheckoutPage = () => {
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Failed to place order.');
             
+            console.log('✅ Order placed successfully, order ID:', result.orderId);
+            
+            // CRITICAL: Clear cart BEFORE navigation to prevent race conditions
             clearCart();
+            
+            // Small delay to ensure localStorage is cleared
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            console.log('🧹 Cart cleared, navigating to orders page...');
             router.push(`/orders?order_id=${result.orderId}`);
 
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
+            console.error('❌ Order placement failed:', msg);
             setError(msg);
         } finally {
             setPlacingOrder(false);

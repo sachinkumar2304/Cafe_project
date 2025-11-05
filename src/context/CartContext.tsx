@@ -20,28 +20,57 @@ interface CartContextType extends CartState {
 }
 
 const DELIVERY_CHARGE = 50;
-const FREE_DELIVERY_THRESHOLD = 500;
+const FREE_DELIVERY_THRESHOLD = 300;
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     const [cartState, setCartState] = useState<CartState>({ cart: [], locationId: null, locationName: null });
     const [isCartOpen, setIsCartOpen] = useState(false);
+    const [isHydrated, setIsHydrated] = useState(false);
 
+    // Load from localStorage ONCE on mount (prevent hydration mismatch)
     useEffect(() => {
         try {
             const savedState = localStorage.getItem('cafe_cart_state');
             if (savedState) {
-                setCartState(JSON.parse(savedState));
+                const parsed = JSON.parse(savedState);
+                // Validate structure before setting
+                if (parsed && typeof parsed === 'object' && Array.isArray(parsed.cart)) {
+                    setCartState(parsed);
+                } else {
+                    console.warn('⚠️ Invalid cart state in localStorage, resetting...');
+                    localStorage.removeItem('cafe_cart_state');
+                }
             }
         } catch (error) {
-            console.error("Failed to parse cart state from localStorage", error);
+            console.error("❌ Failed to parse cart state from localStorage:", error);
+            localStorage.removeItem('cafe_cart_state'); // Clear corrupted data
+        } finally {
+            setIsHydrated(true); // Mark as ready
         }
     }, []);
 
+    // Save to localStorage ONLY after hydration
     useEffect(() => {
-        localStorage.setItem('cafe_cart_state', JSON.stringify(cartState));
-    }, [cartState]);
+        if (!isHydrated) return; // Don't save during initial load
+        
+        try {
+            localStorage.setItem('cafe_cart_state', JSON.stringify(cartState));
+        } catch (error) {
+            console.error("❌ Failed to save cart state:", error);
+            // Handle quota exceeded or other localStorage errors
+            if (error instanceof Error && error.name === 'QuotaExceededError') {
+                console.warn('⚠️ localStorage quota exceeded, clearing old data...');
+                try {
+                    localStorage.clear();
+                    localStorage.setItem('cafe_cart_state', JSON.stringify(cartState));
+                } catch (e) {
+                    console.error('❌ Still failed after clearing:', e);
+                }
+            }
+        }
+    }, [cartState, isHydrated]);
 
     const addToCart = useCallback((item: MenuItem & { locationName?: string }) => {
         if (!item.isAvailable || !item.locationId) return;
@@ -77,7 +106,16 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     }, []);
 
     const clearCart = useCallback(() => {
+        console.log('🧹 Clearing cart...');
         setCartState({ cart: [], locationId: null, locationName: null });
+        
+        // Force immediate localStorage update
+        try {
+            localStorage.setItem('cafe_cart_state', JSON.stringify({ cart: [], locationId: null, locationName: null }));
+            console.log('✅ Cart cleared and localStorage updated');
+        } catch (error) {
+            console.error('❌ Failed to clear localStorage:', error);
+        }
     }, []);
 
     const cartCount = useMemo(() => cartState.cart.reduce((sum, item) => sum + item.quantity, 0), [cartState.cart]);

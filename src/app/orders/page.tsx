@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
-import { Loader2, ShoppingBag, CheckCircle, Truck, PackageCheck, XCircle, ArrowRight } from 'lucide-react';
+import { Loader2, ShoppingBag, CheckCircle, Truck, PackageCheck, XCircle, ArrowRight, RefreshCw } from 'lucide-react';
 
 // --- TYPES ---
 interface OrderItem {
@@ -96,7 +96,7 @@ const OrderCard = ({ order }: { order: Order }) => (
 
 // --- MAIN PAGE COMPONENT ---
 const OrdersPage = () => {
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []); // Memoize to prevent recreation
     const router = useRouter();
     const [showSuccess, setShowSuccess] = useState(false);
 
@@ -104,6 +104,14 @@ const OrdersPage = () => {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+    const [loadingTimeout, setLoadingTimeout] = useState(false);
+
+    const handleManualRefresh = async () => {
+        setRefreshing(true);
+        await fetchOrders();
+        setTimeout(() => setRefreshing(false), 500); // Visual feedback
+    };
 
     useEffect(() => {
         try {
@@ -119,70 +127,168 @@ const OrdersPage = () => {
     }, []);
 
     const fetchOrders = useCallback(async () => {
+        console.log('📦 Fetching user orders...');
         setError(null); // Clear any previous errors
         try {
-            const response = await fetch('/api/orders');
+            const startTime = performance.now();
+            const response = await fetch('/api/orders', {
+                cache: 'no-store', // Prevent caching issues
+                headers: {
+                    'Cache-Control': 'no-cache',
+                }
+            });
+            
             if (!response.ok) {
                 // If no orders found or unauthorized, just set empty array
                 if (response.status === 404 || response.status === 401) {
+                    console.log('ℹ️ No orders found or unauthorized');
                     setOrders([]);
                     setError(null); // Don't show error for empty state
                     return;
                 }
                 throw new Error('Failed to fetch orders.');
             }
+            
             const data = await response.json();
+            const endTime = performance.now();
+            console.log(`✅ Fetched ${data?.length || 0} orders in ${(endTime - startTime).toFixed(0)}ms`);
+            
             setOrders(Array.isArray(data) ? data : []);
             setError(null); // Clear error on success
         } catch (err: unknown) {
             // Don't show error for empty orders, just log it
-            console.error('Error fetching orders:', err);
+            console.error('❌ Error fetching orders:', err);
             setOrders([]);
             setError(null); // Don't show error to user
         }
-    }, []);
+    }, []); // Empty dependency - stable function
 
     useEffect(() => {
         const initialize = async () => {
+            console.log('🚀 Initializing orders page...');
             setLoading(true);
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
-                router.push('/login?redirect_to=/orders');
-                return;
+            
+            try {
+                // Add timeout to prevent infinite hang
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Session check timeout')), 5000)
+                );
+                
+                const sessionPromise = supabase.auth.getSession();
+                
+                const { data: { session }, error: sessionError } = await Promise.race([
+                    sessionPromise,
+                    timeoutPromise
+                ]) as any;
+                
+                if (sessionError) {
+                    console.error('❌ Session error:', sessionError);
+                    router.push('/login?redirect_to=/orders');
+                    return;
+                }
+                
+                if (!session) {
+                    console.log('👤 No session, redirecting to login...');
+                    router.push('/login?redirect_to=/orders');
+                    return;
+                }
+                
+                console.log('✅ User authenticated:', session.user.email);
+                setUser(session.user);
+                
+                // Fetch orders with timeout
+                await Promise.race([
+                    fetchOrders(),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Orders fetch timeout')), 8000)
+                    )
+                ]).catch((err) => {
+                    console.error('⚠️ Initial fetch timeout, will retry with polling');
+                    // Don't fail - let polling handle it
+                });
+                
+            } catch (err) {
+                console.error('❌ Initialization error:', err);
+                // Don't redirect on timeout - try to recover
+                if (err instanceof Error && err.message.includes('timeout')) {
+                    console.warn('⚠️ Timeout occurred, but staying on page');
+                    setLoading(false);
+                } else {
+                    router.push('/login?redirect_to=/orders');
+                }
+            } finally {
+                setLoading(false);
+                console.log('✅ Orders page initialized');
             }
-            setUser(session.user);
-            await fetchOrders();
-            setLoading(false);
         };
 
         initialize();
-    }, [router, supabase.auth, fetchOrders]);
+    }, [router]); // Remove supabase.auth and fetchOrders from dependencies
 
-    // REAL-TIME SUBSCRIPTION
+    // POLLING-based updates (every 10 seconds) - Free tier friendly
     useEffect(() => {
         if (!user) return;
 
-        const channel = supabase
-            .channel('public:orders')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` },
-                (payload) => {
-                    console.log('Order change received!', payload);
-                    // Refetch all orders when a change occurs
+        console.log('⏰ Setting up polling for order updates (every 15s when tab is active)');
+        
+        let pollInterval: NodeJS.Timeout | null = null;
+        
+        const startPolling = () => {
+            if (pollInterval) return; // Already polling
+            
+            pollInterval = setInterval(() => {
+                // Only poll if document is visible
+                if (!document.hidden) {
+                    console.log('🔄 Auto-polling for order updates...');
                     fetchOrders();
                 }
-            )
-            .subscribe();
+            }, 15000); // 15 seconds
+        };
+        
+        const stopPolling = () => {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        };
+        
+        // Start polling immediately
+        startPolling();
+        
+        // Stop polling when tab is hidden, resume when visible
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                console.log('⏸️ Tab hidden, pausing polling');
+                stopPolling();
+            } else {
+                console.log('▶️ Tab visible, resuming polling');
+                startPolling();
+                fetchOrders(); // Immediate refresh on tab focus
+            }
+        };
+        
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        // Cleanup subscription on component unmount
+        // Cleanup on unmount
         return () => {
-            supabase.removeChannel(channel);
+            console.log('🧹 Cleaning up polling interval');
+            stopPolling();
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
 
-    }, [user, supabase, fetchOrders]);
+    }, [user, fetchOrders]);
 
     if (loading) {
+        // Failsafe: Auto-exit loading after 10 seconds
+        if (!loadingTimeout) {
+            setTimeout(() => {
+                console.warn('⚠️ Loading timeout - force exiting loading state');
+                setLoading(false);
+                setLoadingTimeout(true);
+                setError('Page took too long to load. Please refresh or try again.');
+            }, 10000);
+        }
+        
         return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Loader2 className="h-10 w-10 animate-spin text-red-700" /></div>;
     }
 
@@ -202,11 +308,22 @@ const OrdersPage = () => {
             </header>
 
             <main className="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-                <div className="mb-8">
-                    <h1 className="text-5xl font-black text-gray-900 mb-2">
-                        My <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Orders</span>
-                    </h1>
-                    <p className="text-lg text-gray-600">Track your delicious deliveries</p>
+                <div className="mb-8 flex justify-between items-start">
+                    <div>
+                        <h1 className="text-5xl font-black text-gray-900 mb-2">
+                            My <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Orders</span>
+                        </h1>
+                        <p className="text-lg text-gray-600">Track your delicious deliveries</p>
+                        <p className="text-sm text-gray-500 mt-1">🔄 Auto-updates every 15 seconds</p>
+                    </div>
+                    <button 
+                        onClick={handleManualRefresh}
+                        disabled={refreshing}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-orange-200 text-orange-600 rounded-lg hover:bg-orange-50 transition shadow-sm hover:shadow-md disabled:opacity-50"
+                    >
+                        <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
+                        <span className="font-semibold">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+                    </button>
                 </div>
 
                 {showSuccess && (
