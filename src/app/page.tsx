@@ -131,13 +131,23 @@ const Header = ({ onOpenCart, cartCount }: { onOpenCart: () => void, cartCount: 
 };
 
 const HeroSection = () => (
-    <section id="home" className="relative pt-32 pb-24 bg-gradient-to-br from-orange-50 via-white to-red-50 overflow-hidden">
+    <section id="home" className="relative pt-28 md:pt-32 pb-16 md:pb-24 bg-gradient-to-br from-orange-50 via-white to-red-50 overflow-hidden min-h-[85vh] md:min-h-auto">
+        {/* Location Badge - Shows delivery areas */}
+        <div className="absolute top-20 md:top-24 left-1/2 transform -translate-x-1/2 z-20">
+            <div className="bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border-2 border-orange-200">
+                <p className="text-sm md:text-base text-gray-700 font-medium flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-orange-600" />
+                    <span className="font-bold text-orange-600">Now delivering in</span> Badlapur, Ambernath, Ulhasnagar & Vangani
+                </p>
+            </div>
+        </div>
+
         {/* Animated background blobs */}
         <div className="absolute -left-40 -top-24 w-[420px] h-[420px] bg-gradient-to-br from-orange-300 to-orange-200 rounded-full opacity-20 blur-3xl animate-float" />
         <div className="absolute right-[-120px] top-8 w-[360px] h-[360px] bg-gradient-to-br from-red-300 to-pink-200 rounded-full opacity-20 blur-3xl animate-float animation-delay-2000" />
         <div className="absolute bottom-0 left-1/2 w-[500px] h-[500px] bg-gradient-to-t from-yellow-200 to-transparent rounded-full opacity-10 blur-2xl" />
         
-        <div className="container mx-auto px-4 relative z-10">
+        <div className="container mx-auto px-4 relative z-10 pt-20 md:pt-4">
             <div className="max-w-5xl mx-auto text-center">
                 {/* Badge */}
                 <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur-sm border border-orange-200 rounded-full px-5 py-2 mb-8 shadow-lg">

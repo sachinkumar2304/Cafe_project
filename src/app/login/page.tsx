@@ -242,14 +242,15 @@ const LoginPage = () => {
                 
                 <div className="text-center mt-8">
                     <p className="text-sm text-gray-600 font-medium">
-                        {isSignUp ? 'Already have an account?' : 'Don&apos;t have an account?'}
+                        {isSignUp ? 'Already have an account?' : "Don't have an account?"}
+                        {' '}
                         <button 
                             onClick={() => { 
                                 setIsSignUp(!isSignUp); 
                                 setError(null); 
                                 setMessage(null); 
                             }} 
-                            className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 ml-1 transition"
+                            className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 transition"
                         >
                             {isSignUp ? 'Sign In' : 'Sign Up'}
                         </button>
