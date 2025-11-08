@@ -20,6 +20,12 @@ import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if Razorpay webhook is configured
+    if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+      console.log('Razorpay webhook not configured - skipping');
+      return NextResponse.json({ received: true, skipped: true });
+    }
+
     const body = await request.text();
     const signature = request.headers.get('x-razorpay-signature');
 

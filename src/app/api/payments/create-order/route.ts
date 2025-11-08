@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 
-// Initialize Razorpay instance (server-side only)
-const razorpay = new Razorpay({
-  key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!,
-});
+// Initialize Razorpay instance (server-side only) - Optional for deployment
+const razorpay = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
+  ? new Razorpay({
+      key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    })
+  : null;
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if Razorpay is configured
+    if (!razorpay) {
+      return NextResponse.json(
+        { error: 'Payment gateway not configured. Please contact support.' },
+        { status: 503 }
+      );
+    }
+
     const { amount, currency = 'INR', receipt } = await request.json();
 
     // Validate input

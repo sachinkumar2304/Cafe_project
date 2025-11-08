@@ -4,6 +4,14 @@ import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if Razorpay is configured
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      return NextResponse.json(
+        { error: 'Payment gateway not configured' },
+        { status: 503 }
+      );
+    }
+
     const {
       razorpay_order_id,
       razorpay_payment_id,
