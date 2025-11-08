@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { MobileHeader } from '@/components/MobileHeader';
 import { createClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
 import { Loader2, ShoppingBag, CheckCircle, Truck, PackageCheck, XCircle, ArrowRight, RefreshCw, Filter, X, Calendar, AlertTriangle, Clock } from 'lucide-react';
@@ -457,18 +458,22 @@ const OrdersPage = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50">
-            <header className="bg-white shadow-md sticky top-0 z-10 border-b border-gray-100">
-                <div className="max-w-4xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-                     <Link href="/" className="flex items-center space-x-2">
-                        <img src="/snackify-logo.jpg" alt="Snackify Logo" className="w-8 h-8" />
-                        <span className="text-xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Snackify</span>
-                    </Link>
-                    <Link href="/menu" className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 transition font-semibold shadow-md hover:shadow-lg hover:scale-105">
-                        <ArrowRight className="h-4 w-4 rotate-180" />
-                        Back to Menu
-                    </Link>
-                </div>
-            </header>
+            <MobileHeader currentPage="orders" showCart={false} />
+            
+            <div className="pt-20">
+                <header className="bg-white shadow-md sticky top-20 z-10 border-b border-gray-100">
+                    <div className="max-w-4xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                         <Link href="/" className="hidden md:flex items-center space-x-2">
+                            <img src="/snackify-logo.jpg" alt="Snackify Logo" className="w-8 h-8" />
+                            <span className="text-xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Snackify</span>
+                        </Link>
+                        <Link href="/menu" className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 transition font-semibold shadow-md hover:shadow-lg hover:scale-105">
+                            <ArrowRight className="h-4 w-4 rotate-180" />
+                            Back to Menu
+                        </Link>
+                    </div>
+                </header>
+            </div>
 
             <main className="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
                 <div className="mb-8 flex justify-between items-start">

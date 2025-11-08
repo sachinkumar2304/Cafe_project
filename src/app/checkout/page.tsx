@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { MobileHeader } from '@/components/MobileHeader';
 import { createClient } from '@/lib/supabase/client';
 import { useCart } from '@/context/CartContext';
 import { User } from '@supabase/supabase-js';
@@ -188,8 +189,10 @@ const CheckoutPage = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-2xl mx-auto">
-                <Link href="/" className="flex items-center justify-center space-x-2 mb-8">
+            <MobileHeader currentPage="checkout" showCart={!isProfileMode} />
+            
+            <div className="max-w-2xl mx-auto pt-20">
+                <Link href="/" className="hidden md:flex items-center justify-center space-x-2 mb-8">
                     <img src="/snackify-logo.jpg" alt="Snackify Logo" className="w-10 h-10" />
                     <span className="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">
                         {isProfileMode ? 'MY PROFILE' : 'Snackify Checkout'}

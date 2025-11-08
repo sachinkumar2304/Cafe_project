@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
-import { CartModal } from '@/components/CartModal'; // Import shared component
+import { CartModal } from '@/components/CartModal';
+import { MobileHeader } from '@/components/MobileHeader';
 import { useAuth } from '@/hooks/useAuth';
 import { Menu as MenuIcon, X, MapPin, ShoppingCart, Utensils, Loader2, Minus, Plus, User, LogOut, Zap, Search } from 'lucide-react';
 
@@ -458,13 +459,20 @@ const MenuApp = () => {
 
     return (
         <div className="min-h-screen bg-gray-100 font-sans">
-            <MenuHeader 
-                locations={locations} 
-                activeLocationId={activeLocationId} 
-                setActiveLocationId={setActiveLocationId}
-                cartCount={cartCount}
+            <MobileHeader 
+                currentPage="menu"
                 onOpenCart={() => setIsCartOpen(true)}
+                showCart={true}
             />
+            <div className="pt-20">
+                <MenuHeader 
+                    locations={locations} 
+                    activeLocationId={activeLocationId} 
+                    setActiveLocationId={setActiveLocationId}
+                    cartCount={cartCount}
+                    onOpenCart={() => setIsCartOpen(true)}
+                />
+            </div>
             <main>
                 <div className="text-center py-3 bg-gradient-to-r from-orange-100 via-yellow-100 to-orange-100 text-orange-800 font-semibold text-sm border-b border-orange-200">
                     <div className="flex items-center justify-center gap-2">
