@@ -195,7 +195,7 @@ Admin Journey:
 - ✅ **Category Filtering**: Filter by Dosas, Beverages, Desserts, etc.
 - ✅ **Smart Cart**: 
   - Single location enforcement (prevents multi-location orders)
-  - Free delivery on orders ₹500+
+  - Free delivery on orders ₹300+
   - Persistent cart (localStorage)
 - ✅ **User Authentication**: 
   - Supabase Auth (email/password)

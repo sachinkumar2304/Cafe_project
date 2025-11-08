@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { CartModal } from '@/components/CartModal'; // Import shared component
 import { useAuth } from '@/hooks/useAuth';
-import { Menu as MenuIcon, X, MapPin, ShoppingCart, Utensils, Loader2, Minus, Plus, User, LogOut, Zap } from 'lucide-react';
+import { Menu as MenuIcon, X, MapPin, ShoppingCart, Utensils, Loader2, Minus, Plus, User, LogOut, Zap, Search } from 'lucide-react';
 
 // --- Interfaces and Types ---
 interface ShopLocation { id: string; name: string; address: string; highlights: string; }
@@ -257,6 +257,8 @@ const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocation
     activeLocationId: string | null,
     locations: ShopLocation[]
 }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+    
     const filteredByLocation = useMemo(() => {
         if (!activeLocationId) return [];
         return menuItems.filter(item => item.locationId === activeLocationId);
@@ -271,10 +273,27 @@ const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocation
         }
     }, [categories, activeCategory, activeLocationId]);
 
+    // Filter by category AND search query
     const filteredItems = useMemo(() => {
-        if (!activeCategory) return [];
-        return filteredByLocation.filter(item => item.category === activeCategory);
-    }, [filteredByLocation, activeCategory]);
+        let items = filteredByLocation;
+        
+        // Filter by category
+        if (activeCategory) {
+            items = items.filter(item => item.category === activeCategory);
+        }
+        
+        // Filter by search query (name, description, category)
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase().trim();
+            items = items.filter(item => 
+                item.name.toLowerCase().includes(query) ||
+                item.description.toLowerCase().includes(query) ||
+                item.category.toLowerCase().includes(query)
+            );
+        }
+        
+        return items;
+    }, [filteredByLocation, activeCategory, searchQuery]);
     
     const activeLocationName = locations.find(loc => loc.id === activeLocationId)?.name || 'Loading Menu...';
 
@@ -285,7 +304,27 @@ const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocation
                     <h2 className="text-4xl font-black text-gray-900 mb-2">
                         Menu for: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">{activeLocationName}</span>
                     </h2>
-                    <p className="text-gray-600 text-lg">Browse our handcrafted menu and order your favorites</p>
+                    <p className="text-gray-600 text-lg mb-6">Browse our handcrafted menu and order your favorites</p>
+                    
+                    {/* Search Bar */}
+                    <div className="relative max-w-xl">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search menu items, categories..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition-all"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-full transition"
+                            >
+                                <X className="h-4 w-4 text-gray-500" />
+                            </button>
+                        )}
+                    </div>
                 </div>
                 {isLoading ? (
                     <div className="text-center py-20">
@@ -316,8 +355,21 @@ const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocation
                         </div>
                         {filteredItems.length === 0 && categories.length > 0 && (
                             <div className="text-center py-16 bg-white rounded-2xl shadow-md">
-                                <p className="text-2xl font-bold text-gray-400 mb-2">No items in this category</p>
-                                <p className="text-gray-500">Try selecting a different category above</p>
+                                <Search className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                                <p className="text-2xl font-bold text-gray-400 mb-2">
+                                    {searchQuery ? 'No items found' : 'No items in this category'}
+                                </p>
+                                <p className="text-gray-500">
+                                    {searchQuery ? 'Try a different search term' : 'Try selecting a different category above'}
+                                </p>
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => setSearchQuery('')}
+                                        className="mt-4 px-6 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-lg hover:shadow-lg transition"
+                                    >
+                                        Clear Search
+                                    </button>
+                                )}
                             </div>
                         )}
                         {filteredByLocation.length === 0 && categories.length === 0 && (
@@ -417,7 +469,7 @@ const MenuApp = () => {
                 <div className="text-center py-3 bg-gradient-to-r from-orange-100 via-yellow-100 to-orange-100 text-orange-800 font-semibold text-sm border-b border-orange-200">
                     <div className="flex items-center justify-center gap-2">
                         <Zap className="h-4 w-4" />
-                        <span>Free delivery on orders above ₹500 • Now serving Badlapur, Ambernath, Ulhasnagar & Vangani</span>
+                        <span>Free delivery on orders above ₹300 • Now serving Badlapur, Ambernath, Ulhasnagar & Vangani</span>
                     </div>
                 </div>
                 <LocationMenuSection 

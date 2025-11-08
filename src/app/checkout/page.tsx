@@ -5,7 +5,14 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useCart } from '@/context/CartContext';
 import { User } from '@supabase/supabase-js';
-import { Loader2, User as UserIcon, MapPin, Home, Landmark, Phone, Save, ShoppingBag, CheckCircle } from 'lucide-react';
+import { Loader2, User as UserIcon, MapPin, Home, Landmark, Phone, Save, ShoppingBag, CheckCircle, CreditCard, Gift, Sparkles } from 'lucide-react';
+
+// Razorpay TypeScript declaration
+declare global {
+    interface Window {
+        Razorpay: any;
+    }
+}
 
 interface Profile {
     name: string;
@@ -15,6 +22,8 @@ interface Profile {
     city: string;
     pincode: string;
     landmark: string;
+    loyalty_points?: number;
+    referral_code?: string;
 }
 
 const CheckoutPage = () => {
@@ -33,6 +42,21 @@ const CheckoutPage = () => {
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isAddressSaved, setIsAddressSaved] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
+    const [pointsToUse, setPointsToUse] = useState(0);
+    const [pointsDiscount, setPointsDiscount] = useState(0);
+    const [showPointsInput, setShowPointsInput] = useState(false);
+
+    // Load Razorpay script
+    useEffect(() => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        document.body.appendChild(script);
+        return () => {
+            document.body.removeChild(script);
+        };
+    }, []);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -108,28 +132,43 @@ const CheckoutPage = () => {
     };
 
     const handlePlaceOrder = async () => {
-        console.log('📦 Placing order...');
+        console.log('📦 Placing order with payment method:', paymentMethod);
         setPlacingOrder(true);
         setError(null);
+        
         try {
-            const response = await fetch('/api/orders', {
+            if (paymentMethod === 'online') {
+                // Show coming soon message for online payment
+                setError('Online Payment Coming Soon! Please use Cash on Delivery for now.');
+                setPlacingOrder(false);
+                return;
+            }
+
+            // Cash on Delivery flow
+            const orderResponse = await fetch('/api/orders', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cart, summary, locationId })
+                body: JSON.stringify({ 
+                    cart, 
+                    summary, 
+                    locationId,
+                    pointsUsed: pointsToUse,
+                    discountFromPoints: pointsDiscount,
+                    paymentMethod: 'cod',
+                })
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Failed to place order.');
+
+            const orderResult = await orderResponse.json();
+            if (!orderResponse.ok) {
+                throw new Error(orderResult.error || 'Failed to place order');
+            }
+
+            console.log('✅ Order placed successfully (Cash on Delivery), order ID:', orderResult.orderId);
             
-            console.log('✅ Order placed successfully, order ID:', result.orderId);
-            
-            // CRITICAL: Clear cart BEFORE navigation to prevent race conditions
+            // Clear cart and navigate
             clearCart();
-            
-            // Small delay to ensure localStorage is cleared
             await new Promise(resolve => setTimeout(resolve, 100));
-            
-            console.log('🧹 Cart cleared, navigating to orders page...');
-            router.push(`/orders?order_id=${result.orderId}`);
+            router.push(`/orders?order_id=${orderResult.orderId}`);
 
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -151,7 +190,7 @@ const CheckoutPage = () => {
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50 py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-2xl mx-auto">
                 <Link href="/" className="flex items-center justify-center space-x-2 mb-8">
-                    <img src="/file.svg" alt="Snackify Logo" className="w-10 h-10" />
+                    <img src="/snackify-logo.jpg" alt="Snackify Logo" className="w-10 h-10" />
                     <span className="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">
                         {isProfileMode ? 'MY PROFILE' : 'Snackify Checkout'}
                     </span>
@@ -183,6 +222,14 @@ const CheckoutPage = () => {
                             handlePlaceOrder={handlePlaceOrder}
                             placingOrder={placingOrder}
                             editAddress={() => setIsAddressSaved(false)}
+                            paymentMethod={paymentMethod}
+                            setPaymentMethod={setPaymentMethod}
+                            pointsToUse={pointsToUse}
+                            setPointsToUse={setPointsToUse}
+                            pointsDiscount={pointsDiscount}
+                            setPointsDiscount={setPointsDiscount}
+                            showPointsInput={showPointsInput}
+                            setShowPointsInput={setShowPointsInput}
                         />
                     )}
                 </div>
@@ -345,10 +392,44 @@ interface OrderConfirmationProps {
     handlePlaceOrder: () => void;
     placingOrder: boolean;
     editAddress: () => void;
+    paymentMethod: 'cod' | 'online';
+    setPaymentMethod: (method: 'cod' | 'online') => void;
+    pointsToUse: number;
+    setPointsToUse: (points: number) => void;
+    pointsDiscount: number;
+    setPointsDiscount: (discount: number) => void;
+    showPointsInput: boolean;
+    setShowPointsInput: (show: boolean) => void;
 }
 
-const OrderConfirmation = ({ profile, handlePlaceOrder, placingOrder, editAddress }: OrderConfirmationProps) => {
+const OrderConfirmation = ({ 
+    profile, 
+    handlePlaceOrder, 
+    placingOrder, 
+    editAddress, 
+    paymentMethod, 
+    setPaymentMethod,
+    pointsToUse,
+    setPointsToUse,
+    pointsDiscount,
+    setPointsDiscount,
+    showPointsInput,
+    setShowPointsInput
+}: OrderConfirmationProps) => {
     const { cart, summary, locationName } = useCart();
+    
+    const loyaltyPoints = profile.loyalty_points || 0;
+    const maxPointsCanUse = Math.min(loyaltyPoints, Math.floor(summary.subtotal)); // Can't use more points than subtotal
+    const maxDiscountFromPoints = Math.floor(maxPointsCanUse / 2); // 2 points = ₹1
+    
+    const handlePointsChange = (value: number) => {
+        const validPoints = Math.max(0, Math.min(value, maxPointsCanUse));
+        setPointsToUse(validPoints);
+        setPointsDiscount(Math.floor(validPoints / 2));
+    };
+    
+    const finalTotal = Math.max(0, summary.total - pointsDiscount);
+    
     return (
         <div>
             <h2 className="text-4xl font-black text-center mb-6">
@@ -406,10 +487,157 @@ const OrderConfirmation = ({ profile, handlePlaceOrder, placingOrder, editAddres
                             <span>Delivery</span>
                             <span>₹{summary.deliveryCharge}</span>
                         </div>
+                        {pointsDiscount > 0 && (
+                            <div className="flex justify-between text-base text-green-600">
+                                <span className="flex items-center gap-1">
+                                    <Sparkles className="h-4 w-4" />
+                                    Points Discount ({pointsToUse} points)
+                                </span>
+                                <span>-₹{pointsDiscount}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between font-black text-xl pt-2 border-t border-gray-200">
                             <span>Total</span>
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">₹{summary.total}</span>
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">₹{finalTotal}</span>
                         </div>
+                    </div>
+                </div>
+                
+                {/* Loyalty Points Card */}
+                {loyaltyPoints > 0 && (
+                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-5 rounded-2xl border-2 border-purple-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                                <Gift className="h-5 w-5 text-purple-600" />
+                                Loyalty Points
+                            </h3>
+                            <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-full font-black text-lg">
+                                {loyaltyPoints} Points
+                            </div>
+                        </div>
+                        
+                        <div className="bg-white/70 p-4 rounded-xl mb-4">
+                            <p className="text-sm text-gray-700 mb-2">
+                                💰 You have <span className="font-bold text-purple-600">{loyaltyPoints} points</span> worth ₹{Math.floor(loyaltyPoints / 2)}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                                🎁 2 points = ₹1 discount | Max usable: {maxPointsCanUse} points (₹{maxDiscountFromPoints})
+                            </p>
+                        </div>
+                        
+                        {!showPointsInput ? (
+                            <button
+                                onClick={() => setShowPointsInput(true)}
+                                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all flex items-center justify-center gap-2"
+                            >
+                                <Sparkles className="h-5 w-5" />
+                                Use Points for Discount
+                            </button>
+                        ) : (
+                            <div className="space-y-3">
+                                <div>
+                                    <div className="flex justify-between mb-2">
+                                        <label className="text-sm font-semibold text-gray-700">Points to Use:</label>
+                                        <span className="text-sm font-bold text-purple-600">
+                                            {pointsToUse} points = ₹{pointsDiscount} off
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max={maxPointsCanUse}
+                                        step="2"
+                                        value={pointsToUse}
+                                        onChange={(e) => handlePointsChange(parseInt(e.target.value))}
+                                        className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                    />
+                                    <div className="flex justify-between mt-2">
+                                        <button
+                                            onClick={() => handlePointsChange(0)}
+                                            className="text-xs text-purple-600 hover:text-purple-800 font-semibold"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            onClick={() => handlePointsChange(maxPointsCanUse)}
+                                            className="text-xs text-purple-600 hover:text-purple-800 font-semibold"
+                                        >
+                                            Use Max
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {pointsDiscount > 0 && (
+                                    <div className="bg-green-50 border-2 border-green-200 p-3 rounded-xl">
+                                        <p className="text-sm font-bold text-green-700 text-center">
+                                            🎉 You'll save ₹{pointsDiscount} on this order!
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+                
+                {/* Payment Method Selection */}
+                <div className="bg-white p-5 rounded-2xl border-2 border-gray-200 shadow-sm">
+                    <h3 className="font-bold text-lg mb-4 text-gray-900 flex items-center gap-2">
+                        <CreditCard className="h-5 w-5 text-orange-600" />
+                        Payment Method
+                    </h3>
+                    
+                    <div className="space-y-3">
+                        {/* Cash on Delivery Option */}
+                        <label className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            paymentMethod === 'cod' 
+                                ? 'border-green-500 bg-green-50' 
+                                : 'border-gray-200 hover:border-green-300 hover:bg-green-50'
+                        }`}>
+                            <input
+                                type="radio"
+                                name="payment"
+                                value="cod"
+                                checked={paymentMethod === 'cod'}
+                                onChange={() => setPaymentMethod('cod')}
+                                className="w-5 h-5 text-green-600 focus:ring-green-500"
+                            />
+                            <div className="flex-grow">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-900">Cash on Delivery</span>
+                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                                        Available
+                                    </span>
+                                </div>
+                                <p className="text-sm text-gray-600 mt-1">Pay with cash when your order arrives</p>
+                            </div>
+                            <span className="text-2xl">💵</span>
+                        </label>
+
+                        {/* Online Payment Option (Coming Soon) */}
+                        <label className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            paymentMethod === 'online' 
+                                ? 'border-orange-500 bg-orange-50' 
+                                : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                        }`}>
+                            <input
+                                type="radio"
+                                name="payment"
+                                value="online"
+                                checked={paymentMethod === 'online'}
+                                onChange={() => setPaymentMethod('online')}
+                                className="w-5 h-5 text-orange-600 focus:ring-orange-500"
+                            />
+                            <div className="flex-grow">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-900">Online Payment</span>
+                                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-semibold rounded-full">
+                                        Coming Soon
+                                    </span>
+                                </div>
+                                <p className="text-sm text-gray-600 mt-1">Pay online via UPI, Cards, Net Banking</p>
+                            </div>
+                            <span className="text-2xl">💳</span>
+                        </label>
                     </div>
                 </div>
                 
@@ -419,16 +647,42 @@ const OrderConfirmation = ({ profile, handlePlaceOrder, placingOrder, editAddres
                     className={`w-full py-4 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center ${
                         placingOrder 
                             ? 'bg-gray-400 cursor-not-allowed' 
-                            : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 hover:shadow-xl hover:scale-105'
+                            : paymentMethod === 'cod'
+                                ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 hover:shadow-xl hover:scale-105'
+                                : 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 hover:shadow-xl hover:scale-105'
                     }`}
                 >
                     {placingOrder ? (
-                        <Loader2 className='w-5 h-5 mr-2 animate-spin' />
+                        <>
+                            <Loader2 className='w-5 h-5 mr-2 animate-spin' />
+                            Placing Order...
+                        </>
                     ) : (
-                        <CheckCircle className='w-5 h-5 mr-2' />
+                        <>
+                            {paymentMethod === 'cod' ? (
+                                <>
+                                    <CheckCircle className='w-5 h-5 mr-2' />
+                                    Place Order - Pay ₹{finalTotal} on Delivery
+                                </>
+                            ) : (
+                                <>
+                                    <CreditCard className='w-5 h-5 mr-2' />
+                                    Pay ₹{finalTotal} Online
+                                </>
+                            )}
+                        </>
                     )}
-                    Place Order & Pay ₹{summary.total}
                 </button>
+                {paymentMethod === 'cod' && (
+                    <p className="text-xs text-center text-gray-600 mt-2">
+                        💵 Pay with cash when your order is delivered
+                    </p>
+                )}
+                {paymentMethod === 'online' && (
+                    <p className="text-xs text-center text-orange-600 mt-2 font-semibold">
+                        ⚠️ Online payment feature will be available soon!
+                    </p>
+                )}
             </div>
         </div>
     );

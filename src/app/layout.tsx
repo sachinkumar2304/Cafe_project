@@ -14,8 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Snackify",
-  description: "Authentic South Indian Flavors, Delivered.",
+  title: "Snackify - Fresh South Indian Food Delivered",
+  description: "Authentic South Indian Flavors, Delivered Fresh. Dosas, Idlis, Sweets & Snacks from neighbourhood kitchens.",
+  icons: {
+    icon: '/snackify-logo.jpg',
+    apple: '/snackify-logo.jpg',
+    shortcut: '/snackify-logo.jpg',
+  },
 };
 
 export default function RootLayout({

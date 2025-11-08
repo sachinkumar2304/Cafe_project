@@ -50,6 +50,9 @@ interface Order {
     total_amount: number;
     delivery_charge: number;
     otp: string;
+    is_cancelled?: boolean;
+    cancelled_at?: string;
+    payment_method?: string;
     profiles: Profile | null;
     order_items: OrderItem[];
 }
@@ -123,7 +126,7 @@ const useSupabaseAuth = () => {
                     await checkAuthAndAdmin(sessionRes.data.session?.user ?? null);
                 }
 
-                const sub = supabase.auth.onAuthStateChange(async (_event, session) => {
+                const sub = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
                     console.log('🔄 Auth state changed:', _event, session?.user?.id || 'No user');
                     if (isMounted) {
                         await checkAuthAndAdmin(session?.user ?? null);
@@ -222,30 +225,28 @@ const OrderManager = () => {
         try {
             const startTime = performance.now();
             
-            const { data: ordersData, error: ordersError } = await supabase
-                .from('orders')
-                .select(`
-                    *,
-                    profiles(*),
-                    order_items (
-                        id,
-                        quantity,
-                        price,
-                        menu_item: menu_items (
-                            name,
-                            description,
-                            is_veg
-                        )
-                    )
-                `)
-                .order('created_at', { ascending: false });
-
-            if (ordersError) {
-                throw new Error(ordersError.message);
+            // Fetch from API instead of direct Supabase call
+            const response = await fetch('/api/admin/orders', {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch orders');
             }
+            
+            const ordersData = await response.json();
 
             const endTime = performance.now();
             console.log(`✅ Fetched ${ordersData?.length || 0} orders in ${(endTime - startTime).toFixed(0)}ms`);
+            
+            // Debug: Log cancelled orders
+            const cancelledOrders = ordersData.filter((o: Order) => o.status === 'cancelled' || o.is_cancelled);
+            if (cancelledOrders.length > 0) {
+                console.log('🚫 Cancelled orders:', cancelledOrders.map((o: Order) => `#${o.order_number}`).join(', '));
+            }
 
             setOrders(ordersData || []);
         } catch (err: unknown) {
@@ -255,10 +256,18 @@ const OrderManager = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [supabase]);
+    }, []);
 
     useEffect(() => {
         fetchOrders();
+        
+        // Auto-refresh removed - admin will manually refresh
+        // const interval = setInterval(() => {
+        //     console.log('🔄 Auto-refreshing orders...');
+        //     fetchOrders();
+        // }, 15000);
+        
+        // return () => clearInterval(interval);
     }, [fetchOrders]);
 
     const handleUpdate = async (orderId: number, update: OrderUpdate) => {
@@ -362,13 +371,25 @@ const OrderManager = () => {
             ) : (
                 <div className="space-y-4">
                     {orders.map(order => (
-                        <div key={order.id} className="border rounded-lg p-4 space-y-4 bg-white shadow-sm hover:shadow-md transition-shadow">
+                        <div 
+                            key={order.id} 
+                            className={`border rounded-lg p-4 space-y-4 shadow-sm hover:shadow-md transition-shadow ${
+                                order.status === 'cancelled' 
+                                    ? 'bg-red-50 border-red-200 opacity-75' 
+                                    : 'bg-white'
+                            }`}
+                        >
                             {/* Header Section */}
                             <div className="flex justify-between items-start border-b pb-3">
                                 <div>
                                     <div className="flex items-center gap-3">
                                         <h3 className="font-bold text-lg text-transparent bg-clip-text bg-gradient-to-r from-amber-800 to-red-900">Order #{order.order_number}</h3>
                                         <StatusIndicator status={order.status} />
+                                        {order.status === 'cancelled' && (
+                                            <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded font-semibold">
+                                                CANCELLED BY CUSTOMER
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="text-sm text-gray-700">{new Date(order.created_at).toLocaleString()}</p>
                                 </div>
@@ -420,73 +441,97 @@ const OrderManager = () => {
 
                             {/* Actions */}
                             <div className="flex items-center gap-4 pt-3 border-t">
-                                <select 
-                                    value={order.status}
-                                    onChange={(e) => {
-                                        const newStatus = e.target.value as OrderStatus;
-                                        handleUpdate(order.id, { status: newStatus });
-                                    }}
-                                    className="p-2 border rounded-md bg-white text-gray-900 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                    disabled={order.status === 'delivered' || order.status === 'cancelled' || updatingOrders.has(order.id)}
-                                >
-                                    <option value="confirmed">Confirmed</option>
-                                    <option value="out_for_delivery">Out for Delivery</option>
-                                    <option value="delivered">Delivered</option>
-                                    <option value="cancelled">Cancelled</option>
-                                </select>
-                                {updatingOrders.has(order.id) && (
-                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                        <span>Updating...</span>
+                                {order.status === 'cancelled' ? (
+                                    <div className="flex items-center gap-2 text-red-700 bg-red-100 px-4 py-2 rounded-lg">
+                                        <XCircle className="h-5 w-5" />
+                                        <span className="font-semibold">Order Cannot Be Modified - Cancelled by Customer</span>
                                     </div>
-                                )}
-                                {order.status === 'out_for_delivery' && (
-                                    <form onSubmit={(e) => { 
-                                        e.preventDefault();
-                                        const otp = otpValues[order.id] || '';
-                                        if (!otp || otp.length !== 6 || !/^\d+$/.test(otp)) {
-                                            alert('Please enter a valid 6-digit OTP');
-                                            return;
-                                        }
-                                        handleUpdate(order.id, { 
-                                            status: 'delivered',
-                                            otp: otp 
-                                        }); 
-                                        // Clear OTP value after submission
-                                        setOtpValues(prev => ({ ...prev, [order.id]: '' }));
-                                    }} 
-                                    className="flex items-center gap-2"
-                                    >
-                                        <input 
-                                            type="text" 
-                                            placeholder="Enter 6-digit OTP" 
-                                            value={otpValues[order.id] || ''} 
+                                ) : order.status === 'delivered' ? (
+                                    <div className="flex items-center gap-2 text-green-700 bg-green-100 px-4 py-2 rounded-lg">
+                                        <CheckCircle className="h-5 w-5" />
+                                        <span className="font-semibold">Order Completed</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <select 
+                                            value={order.status}
                                             onChange={(e) => {
-                                                const value = e.target.value.replace(/[^0-9]/g, '');
-                                                if (value.length <= 6) {
-                                                    setOtpValues(prev => ({ ...prev, [order.id]: value }));
-                                                }
+                                                const newStatus = e.target.value as OrderStatus;
+                                                handleUpdate(order.id, { status: newStatus });
                                             }}
-                                            className="p-2 border rounded-md w-32 text-sm text-gray-900"
-                                            maxLength={6}
-                                            required
-                                            disabled={updatingOrders.has(order.id)}
-                                        />
-                                        <button 
-                                            type="submit" 
-                                            className="p-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                            className="p-2 border rounded-md bg-white text-gray-900 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                             disabled={updatingOrders.has(order.id)}
                                         >
-                                            {updatingOrders.has(order.id) ? (
-                                                <>
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                    Verifying...
-                                                </>
-                                            ) : (
-                                                'Verify & Deliver'
-                                            )}
-                                        </button>
-                                    </form>
+                                            <option value="confirmed">Confirmed</option>
+                                            <option value="out_for_delivery">Out for Delivery</option>
+                                            <option value="delivered">Delivered</option>
+                                        </select>
+                                        {updatingOrders.has(order.id) && (
+                                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                <span>Updating...</span>
+                                            </div>
+                                        )}
+                                        {order.status === 'out_for_delivery' && (
+                                            <form onSubmit={(e) => { 
+                                                e.preventDefault();
+                                                const enteredOtp = otpValues[order.id] || '';
+                                                const correctOtp = order.otp;
+                                                
+                                                // Validate OTP format
+                                                if (!enteredOtp || enteredOtp.length !== 6 || !/^\d+$/.test(enteredOtp)) {
+                                                    alert('❌ Please enter a valid 6-digit OTP');
+                                                    return;
+                                                }
+                                                
+                                                // Validate OTP match
+                                                if (enteredOtp !== correctOtp) {
+                                                    alert(`❌ Invalid OTP!\n\nEntered: ${enteredOtp}\nCorrect OTP: ${correctOtp}\n\nPlease check with customer and try again.`);
+                                                    return;
+                                                }
+                                                
+                                                // OTP verified - proceed with delivery
+                                                handleUpdate(order.id, { 
+                                                    status: 'delivered',
+                                                    otp: enteredOtp 
+                                                }); 
+                                                // Clear OTP value after submission
+                                                setOtpValues(prev => ({ ...prev, [order.id]: '' }));
+                                            }} 
+                                            className="flex items-center gap-2"
+                                            >
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Enter 6-digit OTP" 
+                                                    value={otpValues[order.id] || ''} 
+                                                    onChange={(e) => {
+                                                        const value = e.target.value.replace(/[^0-9]/g, '');
+                                                        if (value.length <= 6) {
+                                                            setOtpValues(prev => ({ ...prev, [order.id]: value }));
+                                                        }
+                                                    }}
+                                                    className="p-2 border rounded-md w-32 text-sm text-gray-900"
+                                                    maxLength={6}
+                                                    required
+                                                    disabled={updatingOrders.has(order.id)}
+                                                />
+                                                <button 
+                                                    type="submit" 
+                                                    className="p-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                    disabled={updatingOrders.has(order.id)}
+                                                >
+                                                    {updatingOrders.has(order.id) ? (
+                                                        <>
+                                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                                            Verifying...
+                                                        </>
+                                                    ) : (
+                                                        'Verify & Deliver'
+                                                    )}
+                                                </button>
+                                            </form>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -886,7 +931,10 @@ const AdminApp = () => {
         <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 font-sans">
             <header className="bg-gradient-to-r from-amber-800 via-red-900 to-red-800 text-white p-4 shadow-xl sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto flex justify-between items-center">
-                    <h1 className="text-2xl font-black">Snackify - Admin Panel</h1>
+                    <div className="flex items-center gap-3">
+                        <img src="/snackify-logo.jpg" alt="Snackify" className="h-10 w-10" />
+                        <h1 className="text-2xl font-black">Snackify - Admin Panel</h1>
+                    </div>
                     <div className="flex items-center space-x-4">
                          <span className="text-sm font-medium">{currentUser?.email || 'Admin'}</span>
                         <Link href="/" className="text-sm font-semibold hover:text-amber-200 transition">Live Site</Link>

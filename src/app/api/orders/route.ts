@@ -33,7 +33,7 @@ export async function POST(request: Request) {
         }
 
         // 2. Get cart items from request body
-        const { cart, summary, locationId } = await request.json();
+        const { cart, summary, locationId, pointsUsed = 0, discountFromPoints = 0, paymentMethod = 'cod' } = await request.json();
 
         if (!cart || cart.length === 0 || !summary || !locationId) {
             return new NextResponse(JSON.stringify({ error: 'Invalid order data.' }), { status: 400 });
@@ -51,6 +51,9 @@ export async function POST(request: Request) {
             p_location_id: locationId,
             p_delivery_charge: summary.deliveryCharge,
             p_cart_items: cartItemsForDb,
+            p_points_used: pointsUsed,
+            p_discount_from_points: discountFromPoints,
+            p_payment_method: paymentMethod,
         });
 
         if (createOrderError) {
@@ -86,6 +89,8 @@ export async function GET(request: Request) {
                 status,
                 total_amount,
                 otp,
+                payment_method,
+                is_cancelled,
                 order_items (
                     quantity,
                     price,

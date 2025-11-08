@@ -48,7 +48,15 @@ body {
 
 /* Gradient text helper for non-tailwind environments */
 .text-gradient {
-  background: linear-gradient(90deg, #fb923c, #ef4444);
+  background: linear-gradient(90deg, #FFC107, #FF6F00, #D84315);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Premium Gold Text Gradient */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #FFD54F, #FFC107, #FFB300);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -67,20 +75,20 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar with matching dark red theme */
 ::-webkit-scrollbar {
   width: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #f5f5f5;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #fb923c, #ef4444);
+  background: linear-gradient(180deg, #FFC107, #FF8F00, #F57C00);
   border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #f97316, #dc2626);
+  background: linear-gradient(180deg, #FFD54F, #FFA726, #FF6F00);
 }

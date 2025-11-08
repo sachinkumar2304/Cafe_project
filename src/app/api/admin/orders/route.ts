@@ -59,17 +59,34 @@ export async function GET(request: Request) {
 
         console.log('Admin verified:', admin);
 
-        // 2. Fetch all orders with user profiles
+        // 2. Fetch all orders with user profiles and order items
         const { data: orders, error: ordersError } = await supabase
             .from('orders')
             .select(`
                 *,
-                profiles ( name, email, phone, address, city, pincode, landmark )
+                profiles ( name, email, phone, address, city, pincode, landmark ),
+                order_items (
+                    id,
+                    quantity,
+                    price,
+                    menu_item: menu_items (
+                        name,
+                        description,
+                        is_veg
+                    )
+                )
             `)
             .order('created_at', { ascending: false })
             .returns<Order[]>();
 
         if (ordersError) throw ordersError;
+        
+        // Debug log
+        console.log(`📦 Fetched ${orders?.length || 0} orders for admin`);
+        const cancelledCount = orders?.filter(o => o.status === 'cancelled').length || 0;
+        if (cancelledCount > 0) {
+            console.log(`🚫 Found ${cancelledCount} cancelled orders`);
+        }
 
         return NextResponse.json(orders || []);
 
@@ -112,12 +129,19 @@ export async function PUT(request: Request) {
         if (otp) {
             const { data: order, error: fetchError } = await supabase
                 .from('orders')
-                .select('otp')
+                .select('otp, status, is_cancelled')
                 .eq('id', orderId)
-                .maybeSingle();
+                .single();
 
             if (fetchError || !order) {
                 return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+            }
+
+            // Check if order is cancelled
+            if (order.status === 'cancelled' || order.is_cancelled === true) {
+                return NextResponse.json({ 
+                    error: 'Cannot deliver cancelled order. This order was cancelled by the customer.' 
+                }, { status: 400 });
             }
 
             if (order.otp === otp) {
@@ -137,6 +161,31 @@ export async function PUT(request: Request) {
 
         // B. Handle status change
         if (status) {
+            // First, check if order is already cancelled
+            const { data: currentOrder, error: fetchError } = await supabase
+                .from('orders')
+                .select('status, is_cancelled')
+                .eq('id', orderId)
+                .single();
+
+            if (fetchError || !currentOrder) {
+                return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+            }
+
+            // Prevent updating cancelled orders
+            if (currentOrder.status === 'cancelled' || currentOrder.is_cancelled === true) {
+                return NextResponse.json({ 
+                    error: 'Cannot update cancelled order. This order was cancelled by the customer.' 
+                }, { status: 400 });
+            }
+
+            // Prevent updating delivered orders (except from out_for_delivery to delivered via OTP)
+            if (currentOrder.status === 'delivered') {
+                return NextResponse.json({ 
+                    error: 'Cannot update delivered order.' 
+                }, { status: 400 });
+            }
+
             const { error: updateError } = await supabase
                 .from('orders')
                 .update({ status })

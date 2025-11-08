@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { CartModal } from '@/components/CartModal'; // Import shared component
 import { useAuth } from '@/hooks/useAuth';
-import { Menu, X, MapPin, ShoppingCart, Utensils, Zap, Loader2, Star, ArrowRight, User, LogOut } from 'lucide-react';
+import { Menu, X, MapPin, ShoppingCart, Utensils, Zap, Loader2, Star, ArrowRight, User, LogOut, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 
 // --- Interfaces and Types ---
 interface ShopLocation { id: string; name: string; address: string; highlights: string; }
@@ -64,7 +64,7 @@ const Header = ({ onOpenCart, cartCount }: { onOpenCart: () => void, cartCount: 
         <header className="fixed top-0 left-0 right-0 z-50 shadow-lg bg-white/95 backdrop-blur-sm border-b border-gray-100">
             <div className="container mx-auto px-4 py-4 flex justify-between items-center">
                 <Link href="/" className="flex items-center space-x-2">
-                    <Utensils className="h-7 w-7 text-orange-600" />
+                    <img src="/snackify-logo.jpg" alt="Snackify" className="h-10 w-10" />
                     <span className={`text-2xl font-extrabold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-700`}>Snackify</span>
                 </Link>
                 <nav className="hidden md:flex space-x-6 items-center text-lg font-medium text-gray-700">
@@ -74,12 +74,13 @@ const Header = ({ onOpenCart, cartCount }: { onOpenCart: () => void, cartCount: 
                     {mounted && isAuthReady && (
                         user ? (
                             <>
-                                <Link href="/orders" className="flex items-center gap-1 hover:text-orange-600 transition">
+                                <Link href="/profile" className="flex items-center gap-1 hover:text-orange-600 transition">
                                     <User className="h-5 w-5" />
-                                    My Orders
-                                </Link>
-                                <Link href="/checkout" className="flex items-center hover:text-orange-600 transition">
                                     Profile
+                                </Link>
+                                <Link href="/orders" className="flex items-center gap-1 hover:text-orange-600 transition">
+                                    <ShoppingBag className="h-5 w-5" />
+                                    Orders
                                 </Link>
                                 <button onClick={handleSignOut} className="flex items-center gap-1 px-4 py-2 text-sm bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 rounded-lg hover:from-gray-200 hover:to-gray-300 transition shadow-sm">
                                     <LogOut className="h-4 w-4" />
@@ -195,6 +196,120 @@ const HeroSection = () => (
         </div>
     </section>
 );
+
+const CategoryCarousel = () => {
+    const [scrollPosition, setScrollPosition] = useState(0);
+    const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+    const categories = [
+        { name: 'Dosa', image: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=400&q=80', popular: true },
+        { name: 'Idli', image: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=400&q=80', popular: true },
+        { name: 'Vada', image: 'https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&q=80', popular: false },
+        { name: 'Sweets', image: 'https://images.unsplash.com/photo-1601000938259-9e92002320b2?w=400&q=80', popular: true },
+        { name: 'Samosa', image: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80', popular: true },
+        { name: 'Pakora', image: 'https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&q=80', popular: false },
+        { name: 'Chaat', image: 'https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&q=80', popular: false },
+        { name: 'Uttapam', image: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=400&q=80', popular: false },
+    ];
+
+    const scroll = (direction: 'left' | 'right') => {
+        if (scrollContainerRef.current) {
+            const scrollAmount = 300;
+            const newPosition = direction === 'left' 
+                ? scrollPosition - scrollAmount 
+                : scrollPosition + scrollAmount;
+            
+            scrollContainerRef.current.scrollTo({
+                left: newPosition,
+                behavior: 'smooth'
+            });
+            setScrollPosition(newPosition);
+        }
+    };
+
+    return (
+        <section className="py-16 bg-gradient-to-br from-orange-50 via-red-50 to-pink-50 relative overflow-hidden">
+            {/* Decorative Elements */}
+            <div className="absolute top-0 left-0 w-96 h-96 bg-orange-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+            <div className="absolute bottom-0 right-0 w-96 h-96 bg-red-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+            
+            <div className="container mx-auto px-4 relative z-10">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-8">
+                    <div>
+                        <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-2">
+                            What's on your <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">mind?</span>
+                        </h2>
+                        <p className="text-gray-600 font-medium">Browse our popular categories</p>
+                    </div>
+                    
+                    {/* Navigation Arrows - Desktop */}
+                    <div className="hidden md:flex gap-2">
+                        <button
+                            onClick={() => scroll('left')}
+                            className="p-3 bg-white border-2 border-gray-200 rounded-full hover:border-orange-400 hover:bg-orange-50 transition-all shadow-md hover:shadow-lg"
+                            aria-label="Scroll left"
+                        >
+                            <ChevronLeft className="h-5 w-5 text-gray-700" />
+                        </button>
+                        <button
+                            onClick={() => scroll('right')}
+                            className="p-3 bg-white border-2 border-gray-200 rounded-full hover:border-orange-400 hover:bg-orange-50 transition-all shadow-md hover:shadow-lg"
+                            aria-label="Scroll right"
+                        >
+                            <ChevronRight className="h-5 w-5 text-gray-700" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Category Cards */}
+                <div 
+                    ref={scrollContainerRef}
+                    className="flex gap-6 overflow-x-auto scrollbar-hide scroll-smooth pb-4"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                    {categories.map((category, index) => (
+                        <Link
+                            key={index}
+                            href="/menu"
+                            className="group flex-shrink-0 relative"
+                        >
+                            <div className="relative w-36 h-36 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
+                                {/* Image */}
+                                <img
+                                    src={category.image}
+                                    alt={category.name}
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                    loading="lazy"
+                                />
+                                
+                                {/* Gradient Overlay */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+                                
+                                {/* Label */}
+                                <div className="absolute bottom-0 left-0 right-0 p-3">
+                                    <h3 className="text-white font-bold text-lg text-center">{category.name}</h3>
+                                </div>
+                                
+                                {/* Popular Badge */}
+                                {category.popular && (
+                                    <div className="absolute top-2 right-2 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                                        Popular
+                                    </div>
+                                )}
+                            </div>
+                        </Link>
+                    ))}
+                </div>
+                
+                {/* Scroll Hint - Mobile */}
+                <p className="text-center text-sm text-gray-500 mt-4 md:hidden">
+                    👉 Swipe to see more categories
+                </p>
+            </div>
+        </section>
+    );
+};
 
 const LocationCard = ({ location, index }: { location: ShopLocation, index: number }) => {
     const getLocationImage = (locationName: string) => {
@@ -312,7 +427,7 @@ const App = () => {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50 p-6">
                 <div className="text-center">
-                    <Utensils className="h-16 w-16 text-orange-600 mx-auto mb-4 animate-bounce" />
+                    <img src="/snackify-logo.jpg" alt="Snackify" className="h-20 w-20 mx-auto mb-4 animate-bounce" />
                     <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600 mb-4">
                         Snackify
                     </h1>
@@ -328,6 +443,7 @@ const App = () => {
             <Header onOpenCart={() => setIsCartOpen(true)} cartCount={cartCount} /> 
             <main className="pt-16">
                 <HeroSection />
+                <CategoryCarousel />
                 <LocationsSection locations={locations} isLoading={isLoading && locations.length === 0} />
             </main>
             <footer className="bg-gradient-to-br from-gray-900 via-red-900 to-gray-900 text-white py-12 relative overflow-hidden">
@@ -339,7 +455,7 @@ const App = () => {
                         {/* Brand */}
                         <div>
                             <div className="flex items-center gap-2 mb-4">
-                                <Utensils className="h-6 w-6 text-orange-400" />
+                                <img src="/snackify-logo.jpg" alt="Snackify" className="h-8 w-8" />
                                 <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-400">Snackify</span>
                             </div>
                             <p className="text-gray-400 text-sm leading-relaxed">

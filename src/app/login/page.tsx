@@ -6,7 +6,7 @@ import Link from 'next/link';
 // client-side navigation hooks (useSearchParams) and auth flows.
 export const dynamic = 'force-dynamic';
 import { AuthError } from '@supabase/supabase-js';
-import { Loader2, LogIn, Mail, Key, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
+import { Loader2, LogIn, Mail, Key, UserPlus, AlertCircle, CheckCircle, Gift } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 const GoogleIcon = () => (
@@ -36,6 +36,7 @@ const LoginPage = () => {
     const [isSignUp, setIsSignUp] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [referralCode, setReferralCode] = useState('');
     const [loading, setLoading] = useState(true); // Start loading to check session
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
@@ -59,8 +60,29 @@ const LoginPage = () => {
         setMessage(null);
         try {
             if (isSignUp) {
-                const { error } = await supabase.auth.signUp({ email, password });
+                const { data, error } = await supabase.auth.signUp({ email, password });
                 if (error) throw error;
+                
+                // If referral code provided, validate and update profile
+                if (referralCode && data.user) {
+                    try {
+                        const response = await fetch('/api/referral/apply', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                userId: data.user.id, 
+                                referralCode: referralCode.trim().toUpperCase() 
+                            }),
+                        });
+                        
+                        if (!response.ok) {
+                            console.error('Referral code application failed');
+                        }
+                    } catch (refErr) {
+                        console.error('Referral error:', refErr);
+                    }
+                }
+                
                 setMessage('Success! Please check your email to confirm your account.');
                 // Switch to sign in mode after 10 seconds
                 setTimeout(() => {
@@ -118,7 +140,7 @@ const LoginPage = () => {
             <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
             
             <Link href="/" className="flex items-center space-x-2 mb-8 relative z-10">
-                <img src="/file.svg" alt="Snackify Logo" className="w-10 h-10" />
+                <img src="/snackify-logo.jpg" alt="Snackify Logo" className="w-10 h-10" />
                 <span className="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Snackify</span>
             </Link>
             
@@ -170,6 +192,21 @@ const LoginPage = () => {
                             className="w-full p-4 pl-12 border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" 
                         />
                     </div>
+                    
+                    {isSignUp && (
+                        <div className="relative group">
+                            <Gift className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-purple-600 transition" />
+                            <input 
+                                type="text" 
+                                placeholder="Referral Code (Optional)" 
+                                value={referralCode} 
+                                onChange={(e) => setReferralCode(e.target.value.toUpperCase())} 
+                                maxLength={12}
+                                className="w-full p-4 pl-12 border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition uppercase" 
+                            />
+                            <p className="text-xs text-purple-600 mt-1 ml-1 font-medium">🎁 Enter a friend's code to get 25 bonus points!</p>
+                        </div>
+                    )}
                     
                     {!isSignUp && (
                         <div className="text-right">

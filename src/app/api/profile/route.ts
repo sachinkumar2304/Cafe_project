@@ -20,12 +20,26 @@ export async function GET(request: Request) {
         if (profileError) {
             // If no profile exists yet, return an empty object with email
             if (profileError.code === 'PGRST116') {
-                return NextResponse.json({ email: user.email || '' });
+                return NextResponse.json({ 
+                    email: user.email || '', 
+                    loyalty_points: 0,
+                    total_orders: 0 
+                });
             }
             throw profileError;
         }
 
-        return NextResponse.json({ ...profile, email: user.email || '' });
+        // Count total orders for this user
+        const { count: totalOrders } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id);
+
+        return NextResponse.json({ 
+            ...profile, 
+            email: user.email || '',
+            total_orders: totalOrders || 0
+        });
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('Error fetching profile:', msg);
