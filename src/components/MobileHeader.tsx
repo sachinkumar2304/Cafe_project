@@ -44,7 +44,12 @@ export function MobileHeader({ currentPage = '', onOpenCart, showCart = true }: 
                 <nav className="hidden md:flex space-x-6 items-center text-lg font-medium text-gray-700">
                     <Link href="/" className="hover:text-orange-600 transition">Home</Link>
                     <Link href="/menu" className="hover:text-orange-600 transition font-bold">Menu</Link>
-                    {mounted && isAuthReady && user && (
+                    {!mounted || !isAuthReady ? (
+                        <>
+                            <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse"></div>
+                            <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse"></div>
+                        </>
+                    ) : user ? (
                         <>
                             <Link href="/profile" className="flex items-center gap-1 hover:text-orange-600 transition">
                                 <User className="h-5 w-5" />
@@ -62,8 +67,7 @@ export function MobileHeader({ currentPage = '', onOpenCart, showCart = true }: 
                                 Sign Out
                             </button>
                         </>
-                    )}
-                    {mounted && isAuthReady && !user && (
+                    ) : (
                         <Link 
                             href="/login" 
                             className="px-4 py-2 text-sm bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 transition font-semibold shadow-md"
@@ -137,7 +141,11 @@ export function MobileHeader({ currentPage = '', onOpenCart, showCart = true }: 
                         Menu
                     </Link>
                     
-                    {mounted && isAuthReady && user && (
+                    {!mounted || !isAuthReady ? (
+                        <div className="px-4 py-2">
+                            <div className="h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+                        </div>
+                    ) : user ? (
                         <>
                             <Link 
                                 href="/orders" 
@@ -167,9 +175,7 @@ export function MobileHeader({ currentPage = '', onOpenCart, showCart = true }: 
                                 Sign Out
                             </button>
                         </>
-                    )}
-                    
-                    {mounted && isAuthReady && !user && (
+                    ) : (
                         <Link 
                             href="/login" 
                             onClick={() => setIsMenuOpen(false)}
