@@ -1,23 +1,34 @@
-import { createServerClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { respondError, respondOk } from '@/lib/apiResponse';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createClient();
 
     // Expect a multipart/form-data request
     const form = await request.formData();
     const file = form.get('file') as File | null;
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    if (!file) return respondError('no_file', 'No file provided', 400);
+
+    // Validate content type and size (max 5MB)
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    const maxBytes = 5 * 1024 * 1024;
+    const contentType = file.type || 'application/octet-stream';
+    if (!allowed.includes(contentType)) {
+      return respondError('unsupported_type', 'Only JPG, PNG, or WEBP images are allowed', 400);
+    }
+    const arrayBuffer = await file.arrayBuffer();
+    if (arrayBuffer.byteLength > maxBytes) {
+      return respondError('file_too_large', 'Max upload size is 5MB', 400);
     }
 
-    const filename = `${Date.now()}-${file.name || 'upload'}`;
+  const safeName = (file.name || 'upload').replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const filename = `${Date.now()}-${safeName}`;
     const bucket = process.env.SUPABASE_MENU_BUCKET || 'menu-images';
-    const arrayBuffer = await file.arrayBuffer();
     const fileBuffer = new Uint8Array(arrayBuffer);
 
     const { error } = await supabase.storage.from(bucket).upload(filename, fileBuffer, {
@@ -27,13 +38,13 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('Upload error:', error);
-      return NextResponse.json({ error: 'Upload failed', details: error }, { status: 500 });
+      return respondError('upload_failed', 'Upload failed', 500);
     }
 
     const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filename);
-    return NextResponse.json({ publicUrl: publicUrlData.publicUrl });
+    return respondOk({ publicUrl: publicUrlData.publicUrl });
   } catch (err) {
     console.error('Upload handler error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return respondError('internal_error', 'Internal server error', 500);
   }
 }

@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { respondError, respondOk } from '@/lib/apiResponse';
+import { ReferralApplySchema } from '@/lib/validation';
 
 export async function POST(request: Request) {
     const supabase = await createClient();
     
     try {
-        const { userId, referralCode } = await request.json();
-        
-        if (!userId || !referralCode) {
-            return NextResponse.json({ error: 'Missing userId or referralCode' }, { status: 400 });
+        const json = await request.json().catch(() => null);
+        if (!json) return respondError('invalid_json', 'Invalid JSON body', 400);
+        const parsed = ReferralApplySchema.safeParse(json);
+        if (!parsed.success) {
+            return respondError('validation_error', parsed.error.issues.map(i => i.message).join('; '), 400);
         }
+        const { userId, referralCode } = parsed.data;
         
         // Find the referrer by referral code
         const { data: referrer, error: referrerError } = await supabase
@@ -19,12 +23,12 @@ export async function POST(request: Request) {
             .single();
         
         if (referrerError || !referrer) {
-            return NextResponse.json({ error: 'Invalid referral code' }, { status: 404 });
+            return respondError('invalid_referral', 'Invalid referral code', 404);
         }
         
         // Can't refer yourself
         if (referrer.id === userId) {
-            return NextResponse.json({ error: 'Cannot use your own referral code' }, { status: 400 });
+            return respondError('self_referral', 'Cannot use your own referral code', 400);
         }
         
         // Update new user's profile with referred_by
@@ -35,7 +39,7 @@ export async function POST(request: Request) {
         
         if (updateError) {
             console.error('Failed to update referred_by:', updateError);
-            return NextResponse.json({ error: 'Failed to apply referral' }, { status: 500 });
+            return respondError('referral_update_failed', 'Failed to apply referral', 500);
         }
         
         // Award 25 points to new user
@@ -73,14 +77,11 @@ export async function POST(request: Request) {
             }
         ]);
         
-        return NextResponse.json({ 
-            success: true, 
-            message: 'Referral applied! You both got 25 points!' 
-        });
+        return respondOk({ message: 'Referral applied! You both got 25 points!' });
         
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('Referral error:', msg);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+        return respondError('internal_error', 'Internal server error', 500);
     }
 }

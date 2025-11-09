@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { respondError, respondOk } from '@/lib/apiResponse';
+import { OrderPayloadSchema } from '@/lib/validation';
 
 // POST handler for creating a new order
 export async function POST(request: Request) {
@@ -8,8 +10,17 @@ export async function POST(request: Request) {
     try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         if (userError || !user) {
-            return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+            return respondError('unauthorized', 'Unauthorized', 401);
         }
+
+        // Parse and validate body
+        const json = await request.json().catch(() => null);
+        if (!json) return respondError('invalid_json', 'Invalid JSON body', 400);
+        const parsed = OrderPayloadSchema.safeParse(json);
+        if (!parsed.success) {
+            return respondError('validation_error', parsed.error.issues.map(i => i.message).join('; '), 400);
+        }
+        const { cart, summary, locationId, pointsUsed, discountFromPoints, paymentMethod } = parsed.data;
 
         // 1. Validate user profile and serviceable area
         const { data: profile, error: profileError } = await supabase
@@ -19,7 +30,7 @@ export async function POST(request: Request) {
             .single();
 
         if (profileError || !profile || !profile.city) {
-            return new NextResponse(JSON.stringify({ error: 'User profile is incomplete. Please provide a delivery address.' }), { status: 400 });
+            return respondError('incomplete_profile', 'User profile is incomplete. Please provide a delivery address.', 400);
         }
 
         const { data: cityData, error: cityError } = await supabase
@@ -29,18 +40,11 @@ export async function POST(request: Request) {
             .single();
 
         if (cityError || !cityData) {
-            return new NextResponse(JSON.stringify({ error: 'Sorry, delivery is not available in your city.' }), { status: 400 });
-        }
-
-        // 2. Get cart items from request body
-        const { cart, summary, locationId, pointsUsed = 0, discountFromPoints = 0, paymentMethod = 'cod' } = await request.json();
-
-        if (!cart || cart.length === 0 || !summary || !locationId) {
-            return new NextResponse(JSON.stringify({ error: 'Invalid order data.' }), { status: 400 });
+            return respondError('city_unserviceable', 'Sorry, delivery is not available in your city.', 400);
         }
 
         // 3. Format cart items for the database function
-        const cartItemsForDb = (cart as Array<{ id: string | number; quantity: number }>).map((item) => ({
+        const cartItemsForDb = cart.map((item) => ({
             menu_item_id: item.id,
             quantity: item.quantity,
         }));
@@ -58,15 +62,14 @@ export async function POST(request: Request) {
 
         if (createOrderError) {
             console.error('Database function error:', createOrderError);
-            throw new Error(`Order creation failed: ${createOrderError.message || JSON.stringify(createOrderError)}`);
+            return respondError('order_failed', createOrderError.message || 'Order creation failed', 500);
         }
 
-        return NextResponse.json({ success: true, orderId: newOrderId });
-
+        return respondOk({ orderId: newOrderId });
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('Error creating order:', msg, error);
-        return new NextResponse(JSON.stringify({ error: msg || 'Could not create order.' }), { status: 500 });
+        return respondError('internal_error', 'Could not create order.', 500);
     }
 }
 
@@ -108,11 +111,11 @@ export async function GET(request: Request) {
             throw ordersError;
         }
 
-        return NextResponse.json(orders);
+    return respondOk(orders);
 
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('Error fetching orders:', msg);
-        return new NextResponse(JSON.stringify({ error: 'Could not fetch orders.' }), { status: 500 });
+        return respondError('internal_error', 'Could not fetch orders.', 500);
     }
 }
