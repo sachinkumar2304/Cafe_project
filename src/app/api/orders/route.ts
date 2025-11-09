@@ -2,12 +2,17 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { respondError, respondOk } from '@/lib/apiResponse';
 import { OrderPayloadSchema } from '@/lib/validation';
+import { rateLimit, ipKey } from '@/lib/rateLimit';
 
 // POST handler for creating a new order
 export async function POST(request: Request) {
     const supabase = await createClient();
 
     try {
+            // Rate limit: 20 requests / 60s per IP
+            const key = ipKey(request, '/api/orders');
+            const rl = rateLimit({ key, windowMs: 60_000, max: 20 });
+            if (!rl.allowed) return respondError('rate_limited', 'Too many requests', 429);
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         if (userError || !user) {
             return respondError('unauthorized', 'Unauthorized', 401);

@@ -1,12 +1,22 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { respondError, respondOk } from '@/lib/apiResponse';
+import { rateLimit, ipKey } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
+    // Rate limit: 20 requests / 10 minutes per IP
+    const key = ipKey(request, '/api/upload');
+    const rl = rateLimit({ key, windowMs: 10 * 60_000, max: 20 });
+    if (!rl.allowed) return respondError('rate_limited', 'Too many uploads', 429);
+  const supabase = await createClient();
+  // Verify admin status
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return respondError('unauthorized', 'Unauthorized', 401);
+  const { data: adminRow } = await supabase.from('admins').select('id').eq('id', user.id).single();
+  if (!adminRow) return respondError('forbidden', 'Only admins can upload files', 403);
 
     // Expect a multipart/form-data request
     const form = await request.formData();

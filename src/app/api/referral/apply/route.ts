@@ -2,11 +2,16 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { respondError, respondOk } from '@/lib/apiResponse';
 import { ReferralApplySchema } from '@/lib/validation';
+import { rateLimit, ipKey } from '@/lib/rateLimit';
 
 export async function POST(request: Request) {
     const supabase = await createClient();
     
     try {
+        // Rate limit: 10 requests / 5 minutes per IP
+        const key = ipKey(request, '/api/referral/apply');
+        const rl = rateLimit({ key, windowMs: 5 * 60_000, max: 10 });
+        if (!rl.allowed) return respondError('rate_limited', 'Too many referral attempts', 429);
         const json = await request.json().catch(() => null);
         if (!json) return respondError('invalid_json', 'Invalid JSON body', 400);
         const parsed = ReferralApplySchema.safeParse(json);
