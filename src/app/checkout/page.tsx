@@ -137,15 +137,24 @@ const CheckoutPage = () => {
         setPlacingOrder(true);
         setError(null);
         
+        // Safety timeout to reset state if something hangs
+        const timeoutId = setTimeout(() => {
+            console.warn('⚠️ Order placement timeout - resetting state');
+            setPlacingOrder(false);
+            setError('Request timeout. Please try again.');
+        }, 15000); // 15 second timeout
+        
         try {
             if (paymentMethod === 'online') {
                 // Show coming soon message for online payment
                 setError('Online Payment Coming Soon! Please use Cash on Delivery for now.');
+                clearTimeout(timeoutId);
                 setPlacingOrder(false);
                 return;
             }
 
             // Cash on Delivery flow
+            console.log('📡 Sending order request...');
             const orderResponse = await fetch('/api/orders', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -159,33 +168,44 @@ const CheckoutPage = () => {
                 })
             });
 
+            console.log('📡 Response received, status:', orderResponse.status);
             const orderResult = await orderResponse.json();
+            console.log('📦 Order result:', orderResult);
+            
             if (!orderResponse.ok) {
-                throw new Error(orderResult.error || 'Failed to place order');
+                throw new Error(orderResult.error || orderResult.message || 'Failed to place order');
             }
 
             console.log('✅ Order placed successfully (Cash on Delivery)');
             
             // Extract order ID from response - handle both old and new response formats
-            const orderId = orderResult.orderId || orderResult.data?.orderId;
+            const orderId = orderResult.orderId || orderResult.data?.orderId || orderResult.id;
             
             if (!orderId) {
-                console.error('No order ID in response:', orderResult);
+                console.error('❌ No order ID in response:', orderResult);
                 throw new Error('Order placed but no order ID returned');
             }
             
-            console.log('Order ID:', orderId);
+            console.log('✅ Order ID:', orderId);
             
             // Clear cart and navigate
             clearCart();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            router.push(`/orders?order_id=${orderId}`);
+            console.log('🧹 Cart cleared');
+            
+            // Navigate with a small delay to ensure state updates
+            await new Promise(resolve => setTimeout(resolve, 200));
+            console.log('🚀 Navigating to orders page...');
+            
+            clearTimeout(timeoutId);
+            
+            // Use window.location for more reliable navigation
+            window.location.href = `/orders?order_id=${orderId}`;
 
         } catch (err: unknown) {
+            clearTimeout(timeoutId);
             const msg = err instanceof Error ? err.message : String(err);
-            console.error('❌ Order placement failed:', msg);
+            console.error('❌ Order placement failed:', msg, err);
             setError(msg);
-        } finally {
             setPlacingOrder(false);
         }
     };

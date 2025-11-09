@@ -15,7 +15,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           )
           supabaseResponse = NextResponse.next({
@@ -33,12 +33,18 @@ export async function middleware(request: NextRequest) {
   // supabase.auth.getUser(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-  // Optional: Add any protected route logic here
-  // For now, just refresh the session
+    // Optional: Add any protected route logic here
+    // For now, just refresh the session
+    
+  } catch (error) {
+    // Log error but don't block the request
+    console.error('Middleware auth error:', error)
+  }
   
   return supabaseResponse
 }

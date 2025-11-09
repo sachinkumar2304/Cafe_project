@@ -40,6 +40,7 @@ const LoginPage = () => {
     const [loading, setLoading] = useState(true); // Start loading to check session
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+    const [hasRedirected, setHasRedirected] = useState(false); // Prevent multiple redirects
 
     useEffect(() => {
         let mounted = true;
@@ -50,9 +51,11 @@ const LoginPage = () => {
                 const { data } = await supabase.auth.getSession();
                 const session = (data as any)?.session;
                 if (!mounted) return;
-                if (session) {
+                if (session && !hasRedirected) {
+                    console.log('✅ Session found, redirecting to:', redirectTo);
+                    setHasRedirected(true);
                     router.push(redirectTo);
-                } else {
+                } else if (!session) {
                     setLoading(false);
                 }
             } catch {
@@ -62,22 +65,31 @@ const LoginPage = () => {
 
         // Subscribe to auth events to avoid hanging loaders
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
-            if (!mounted) return;
+            if (!mounted || hasRedirected) return;
+            console.log('🔐 Auth event:', event, 'Has session:', !!session);
+            
             if (event === 'INITIAL_SESSION') {
-                if (session?.user) router.push(redirectTo);
-                else setLoading(false);
-            }
-            if (event === 'SIGNED_IN') {
+                if (session?.user) {
+                    setHasRedirected(true);
+                    router.push(redirectTo);
+                } else {
+                    setLoading(false);
+                }
+            } else if (event === 'SIGNED_IN') {
+                setHasRedirected(true);
                 router.push(redirectTo);
-            }
-            if (event === 'SIGNED_OUT') {
+            } else if (event === 'SIGNED_OUT') {
                 setLoading(false);
+                setHasRedirected(false);
             }
         });
 
         // Hard timeout failsafe in case getSession hangs
         timeout = setTimeout(() => {
-            if (mounted) setLoading(false);
+            if (mounted && !hasRedirected) {
+                console.warn('⚠️ Session check timeout');
+                setLoading(false);
+            }
         }, 3000);
 
         checkUser();
@@ -87,7 +99,7 @@ const LoginPage = () => {
             clearTimeout(timeout);
             subscription.unsubscribe();
         };
-    }, [router, supabase.auth, redirectTo]);
+    }, [router, supabase.auth, redirectTo, hasRedirected]);
 
     const handleAuthAction = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -126,12 +138,20 @@ const LoginPage = () => {
                     setMessage(null);
                 }, 10000); // 10 seconds
             } else {
-                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                console.log('🔐 Signing in with email:', email);
+                const { error, data } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
+                
+                console.log('✅ Sign-in successful, session:', !!data.session);
+                setHasRedirected(true);
+                
+                // Wait a moment for session to propagate
+                await new Promise(resolve => setTimeout(resolve, 300));
                 router.push(redirectTo);
             }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
+            console.error('❌ Auth error:', msg);
             setError(msg || 'An unknown error occurred.');
         } finally {
             setLoading(false);
