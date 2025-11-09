@@ -42,15 +42,51 @@ const LoginPage = () => {
     const [message, setMessage] = useState<string | null>(null);
 
     useEffect(() => {
+        let mounted = true;
+        let timeout: any;
+
         const checkUser = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                router.push(redirectTo);
-            } else {
-                setLoading(false);
+            try {
+                const { data } = await supabase.auth.getSession();
+                const session = (data as any)?.session;
+                if (!mounted) return;
+                if (session) {
+                    router.push(redirectTo);
+                } else {
+                    setLoading(false);
+                }
+            } catch {
+                if (mounted) setLoading(false);
             }
         };
+
+        // Subscribe to auth events to avoid hanging loaders
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
+            if (!mounted) return;
+            if (event === 'INITIAL_SESSION') {
+                if (session?.user) router.push(redirectTo);
+                else setLoading(false);
+            }
+            if (event === 'SIGNED_IN') {
+                router.push(redirectTo);
+            }
+            if (event === 'SIGNED_OUT') {
+                setLoading(false);
+            }
+        });
+
+        // Hard timeout failsafe in case getSession hangs
+        timeout = setTimeout(() => {
+            if (mounted) setLoading(false);
+        }, 3000);
+
         checkUser();
+
+        return () => {
+            mounted = false;
+            clearTimeout(timeout);
+            subscription.unsubscribe();
+        };
     }, [router, supabase.auth, redirectTo]);
 
     const handleAuthAction = async (e: React.FormEvent) => {
