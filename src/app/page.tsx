@@ -511,7 +511,6 @@ const App = () => {
                         <p className="text-sm text-gray-400">
                             &copy; {new Date().getFullYear()} <span className="text-orange-400 font-semibold">Snackify</span>. All rights reserved.
                         </p>
-                        <p className="text-xs text-gray-500 mt-3">Built with Next.js & Supabase — Scalable, Fast & Secure</p>
                         
                         {/* Developer Credit */}
                         <div className="mt-4 pt-4 border-t border-gray-800">
