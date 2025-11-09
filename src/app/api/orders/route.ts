@@ -116,11 +116,11 @@ export async function GET(request: Request) {
             throw ordersError;
         }
 
-    return respondOk(orders);
+        return NextResponse.json(orders || []);
 
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('Error fetching orders:', msg);
-        return respondError('internal_error', 'Could not fetch orders.', 500);
+        return NextResponse.json({ error: 'Could not fetch orders.' }, { status: 500 });
     }
 }

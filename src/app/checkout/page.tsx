@@ -164,12 +164,22 @@ const CheckoutPage = () => {
                 throw new Error(orderResult.error || 'Failed to place order');
             }
 
-            console.log('✅ Order placed successfully (Cash on Delivery), order ID:', orderResult.orderId);
+            console.log('✅ Order placed successfully (Cash on Delivery)');
+            
+            // Extract order ID from response - handle both old and new response formats
+            const orderId = orderResult.orderId || orderResult.data?.orderId;
+            
+            if (!orderId) {
+                console.error('No order ID in response:', orderResult);
+                throw new Error('Order placed but no order ID returned');
+            }
+            
+            console.log('Order ID:', orderId);
             
             // Clear cart and navigate
             clearCart();
             await new Promise(resolve => setTimeout(resolve, 100));
-            router.push(`/orders?order_id=${orderResult.orderId}`);
+            router.push(`/orders?order_id=${orderId}`);
 
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
