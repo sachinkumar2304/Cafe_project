@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 
@@ -18,9 +18,7 @@ export function useAuth(): UseAuthReturn {
     const [isAdmin, setIsAdmin] = useState(false);
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
-    
-    // ✅ Memoize supabase client - prevent recreation
-    const supabase = useMemo(() => createClient(), []);
+    const supabase = createClient();
 
     useEffect(() => {
         let mounted = true;
@@ -38,57 +36,68 @@ export function useAuth(): UseAuthReturn {
             }
         };
 
-        // 1) Seed state with current session quickly
-        supabase.auth.getSession()
-            .then((result: any) => {
-                const session = result?.data?.session as any;
+        const initAuth = async () => {
+            try {
+                // Get initial session
+                const { data: { session } } = await supabase.auth.getSession();
+                
                 if (!mounted) return;
-                const sUser = (session as any)?.user ?? null;
-                setUser(sUser);
-                if (sUser) checkAdmin((sUser as User).id);
-            })
-            .catch((error: unknown) => {
-                if (!mounted) return;
-                setAuthError(error instanceof Error ? error.message : 'Authentication failed');
-                setUser(null);
-                setIsAdmin(false);
-            });
+                
+                console.log('🔐 Initial auth check - Session:', session ? 'Found' : 'None', 'User:', session?.user?.email || 'Guest');
+                
+                setUser(session?.user ?? null);
+                if (session?.user) {
+                    await checkAdmin(session.user.id);
+                }
+                setIsAuthReady(true);
+            } catch (error) {
+                console.error('❌ Auth initialization error:', error);
+                if (mounted) {
+                    setUser(null);
+                    setIsAdmin(false);
+                    setIsAuthReady(true);
+                }
+            }
+        };
 
-        // 2) Listen for auth changes including INITIAL_SESSION to mark readiness
+        // Initialize auth
+        initAuth();
+
+        // Listen for auth state changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
-            // events: INITIAL_SESSION | SIGNED_IN | SIGNED_OUT | TOKEN_REFRESHED | USER_UPDATED | PASSWORD_RECOVERY
             if (!mounted) return;
+            
+            console.log('🔐 Auth state changed:', event, 'User:', session?.user?.email || 'None');
+            
             setUser(session?.user ?? null);
+            
             if (session?.user) {
                 await checkAdmin(session.user.id);
             } else {
                 setIsAdmin(false);
             }
-            if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-                setIsAuthReady(true);
-            }
+            
+            // Ensure UI is ready after any auth event
+            setIsAuthReady(true);
         });
-
-        // 3) Failsafe: if INITIAL_SESSION never arrives (rare), unlock UI after 2s
-        const readyTimeout = setTimeout(() => {
-            if (mounted) setIsAuthReady(true);
-        }, 2000);
 
         return () => {
             mounted = false;
-            clearTimeout(readyTimeout);
             subscription.unsubscribe();
         };
-    }, []); // ✅ Empty dependency - stable supabase client
+    }, []);
 
     const signIn = async (email: string, password: string) => {
         try {
-            const { error } = await supabase.auth.signInWithPassword({
+            console.log('🔑 Signing in:', email);
+            const { data, error } = await supabase.auth.signInWithPassword({
                 email,
                 password
             });
             if (error) throw error;
+            console.log('✅ Sign in successful:', data.user?.email);
         } catch (error) {
+            console.error('❌ Sign in failed:', error);
             setAuthError(error instanceof Error ? error.message : 'Sign in failed');
             throw error;
         }
@@ -96,9 +105,21 @@ export function useAuth(): UseAuthReturn {
 
     const signOut = async () => {
         try {
+            console.log('🚪 Signing out...');
+            
+            // Clear local state immediately
+            setUser(null);
+            setIsAdmin(false);
+            
             const { error } = await supabase.auth.signOut();
             if (error) throw error;
+            
+            console.log('✅ Sign out successful');
+            
+            // Force page reload to clear all state
+            window.location.href = '/';
         } catch (error) {
+            console.error('❌ Sign out failed:', error);
             setAuthError(error instanceof Error ? error.message : 'Sign out failed');
             throw error;
         }
