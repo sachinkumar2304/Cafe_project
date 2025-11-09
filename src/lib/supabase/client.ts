@@ -14,7 +14,14 @@ export function createClient() {
     throw new Error('Missing Supabase environment variables. Please check .env.local');
   }
 
-  supabaseClient = createBrowserClient(url, key);
+  // Ensure session persistence and auto refresh are enabled on the browser
+  supabaseClient = createBrowserClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
 
   return supabaseClient;
 }

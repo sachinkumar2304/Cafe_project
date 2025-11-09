@@ -23,63 +23,60 @@ export function useAuth(): UseAuthReturn {
     const supabase = useMemo(() => createClient(), []);
 
     useEffect(() => {
-        const fetchUserAndAdmin = async () => {
+        let mounted = true;
+
+        const checkAdmin = async (userId: string) => {
             try {
-                console.log('🔍 Checking auth session...');
-                // Check current session
-                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-                
-                if (sessionError) {
-                    console.error('❌ Session error:', sessionError);
-                    throw sessionError;
-                }
-                
-                if (session?.user) {
-                    console.log('✅ User logged in:', session.user.email);
-                    setUser(session.user);
-                    // Check admin status directly from admins table
-                    const { data: adminData } = await supabase
-                        .from('admins')
-                        .select('id')
-                        .eq('id', session.user.id)
-                        .single();
-                    setIsAdmin(!!adminData);
-                } else {
-                    console.log('👤 No active session - Guest user');
-                }
-            } catch (error) {
-                console.error('❌ Error fetching user session:', error);
-                setAuthError(error instanceof Error ? error.message : 'Authentication failed');
-                // Don't block the app - set user as null and continue
-                setUser(null);
-                setIsAdmin(false);
-            } finally {
-                setIsAuthReady(true);
-                console.log('✅ Auth ready');
-            }
-        };
-
-        fetchUserAndAdmin();
-
-        // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log('🔐 Auth state changed:', event, session?.user?.email);
-            setUser(session?.user ?? null);
-            if (session?.user) {
-                // Check admin status directly from admins table
                 const { data: adminData } = await supabase
                     .from('admins')
                     .select('id')
-                    .eq('id', session.user.id)
+                    .eq('id', userId)
                     .single();
-                setIsAdmin(!!adminData);
+                if (mounted) setIsAdmin(!!adminData);
+            } catch {
+                if (mounted) setIsAdmin(false);
+            }
+        };
+
+        // 1) Seed state with current session quickly
+        supabase.auth.getSession()
+            .then((result: any) => {
+                const session = result?.data?.session as any;
+                if (!mounted) return;
+                const sUser = (session as any)?.user ?? null;
+                setUser(sUser);
+                if (sUser) checkAdmin((sUser as User).id);
+            })
+            .catch((error: unknown) => {
+                if (!mounted) return;
+                setAuthError(error instanceof Error ? error.message : 'Authentication failed');
+                setUser(null);
+                setIsAdmin(false);
+            });
+
+        // 2) Listen for auth changes including INITIAL_SESSION to mark readiness
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
+            // events: INITIAL_SESSION | SIGNED_IN | SIGNED_OUT | TOKEN_REFRESHED | USER_UPDATED | PASSWORD_RECOVERY
+            if (!mounted) return;
+            setUser(session?.user ?? null);
+            if (session?.user) {
+                await checkAdmin(session.user.id);
             } else {
                 setIsAdmin(false);
             }
+            if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+                setIsAuthReady(true);
+            }
         });
 
+        // 3) Failsafe: if INITIAL_SESSION never arrives (rare), unlock UI after 2s
+        const readyTimeout = setTimeout(() => {
+            if (mounted) setIsAuthReady(true);
+        }, 2000);
+
         return () => {
-            console.log('🧹 Cleaning up auth subscription');
+            mounted = false;
+            clearTimeout(readyTimeout);
             subscription.unsubscribe();
         };
     }, []); // ✅ Empty dependency - stable supabase client
