@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MobileHeader } from '@/components/MobileHeader';
 import { createClient } from '@/lib/supabase/client';
+import logger from '@/lib/logger';
 import { User } from '@supabase/supabase-js';
 import { Loader2, ShoppingBag, CheckCircle, Truck, PackageCheck, XCircle, ArrowRight, RefreshCw, Filter, X, Calendar, AlertTriangle, Clock, Award } from 'lucide-react';
 
@@ -49,11 +50,14 @@ const StatusIndicator = ({ status }: { status: Order['status'] }) => {
     );
 };
 
+import { useCart } from '@/context/CartContext';
+
 const OrderCard = ({ order, onCancelSuccess }: { order: Order; onCancelSuccess: () => void }) => {
     const [cancelling, setCancelling] = useState(false);
     const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
     const [localStatus, setLocalStatus] = useState<Order['status']>(order.status);
     const [isCancelled, setIsCancelled] = useState(order.is_cancelled || order.status === 'cancelled');
+    const { addToCart } = useCart();
     
     // Update local state when order prop changes
     useEffect(() => {
@@ -90,28 +94,28 @@ const OrderCard = ({ order, onCancelSuccess }: { order: Order; onCancelSuccess: 
     
     const handleCancelOrder = async () => {
         if (!confirm('Are you sure you want to cancel this order?')) return;
-        
-        console.log('🚫 Cancelling order:', order.id, 'Order#', order.order_number);
+
+        logger.info('🚫 Cancelling order:', order.id, 'Order#', order.order_number);
         setCancelling(true);
         
         try {
-            console.log('📡 Sending cancel request to API...');
+            logger.info('📡 Sending cancel request to API...');
             const response = await fetch('/api/orders/cancel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ orderId: order.id })
             });
             
-            console.log('📬 API Response status:', response.status);
+            logger.info('📬 API Response status:', response.status);
             
             if (!response.ok) {
                 const data = await response.json();
-                console.error('❌ Cancel failed:', data);
+                logger.error('❌ Cancel failed:', data);
                 throw new Error(data.error || 'Failed to cancel order');
             }
             
             const result = await response.json();
-            console.log('✅ Cancel success:', result);
+            logger.info('✅ Cancel success:', result);
             
             alert('Order cancelled successfully!');
             setIsCancelled(true); // Update local state
@@ -120,7 +124,7 @@ const OrderCard = ({ order, onCancelSuccess }: { order: Order; onCancelSuccess: 
             onCancelSuccess(); // Trigger parent refresh
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Failed to cancel order';
-            console.error('💥 Cancel error:', error);
+            logger.error('💥 Cancel error:', error);
             alert(msg);
         } finally {
             setCancelling(false);
@@ -208,6 +212,31 @@ const OrderCard = ({ order, onCancelSuccess }: { order: Order; onCancelSuccess: 
                     </button>
                 </div>
             )}
+
+            {/* Reorder Button for Delivered Orders (Adds items to cart and redirects to menu) */}
+            {localStatus === 'delivered' && !isCancelled && (
+                <div className="mt-4">
+                    <button
+                        onClick={() => {
+                            try {
+                                // Store minimal seed of item names & quantities
+                                const seed = order.order_items.map(oi => ({ name: oi.menu_items.name, qty: oi.quantity }));
+                                localStorage.setItem('reorder_seed', JSON.stringify(seed));
+                                // Optimistic cart add using available data (price unknown until matched, user will confirm on menu page)
+                                alert('Reorder seed saved. Redirecting to Menu to rebuild cart...');
+                                window.location.href = '/menu?reorder=1';
+                            } catch (e) {
+                                logger.error('Failed to set reorder seed', e);
+                            }
+                        }}
+                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow"
+                    >
+                        <RefreshCw className="h-5 w-5" />
+                        Reorder This
+                    </button>
+                    <p className="text-xs text-gray-600 mt-2 text-center">We recreate your cart on the Menu page without extra server requests.</p>
+                </div>
+            )}
         </div>
     </div>
     );
@@ -224,6 +253,7 @@ const OrdersPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [loadingTimeout, setLoadingTimeout] = useState(false);
     const [pointsToast, setPointsToast] = useState<{ points: number; orderNumber: number } | null>(null);
 
@@ -304,7 +334,7 @@ const OrdersPage = () => {
     }, []);
 
     const fetchOrders = useCallback(async () => {
-        console.log('📦 Fetching user orders...');
+        logger.info('📦 Fetching user orders...');
         setError(null); // Clear any previous errors
         try {
             const startTime = performance.now();
@@ -318,7 +348,7 @@ const OrdersPage = () => {
             if (!response.ok) {
                 // If no orders found or unauthorized, just set empty array
                 if (response.status === 404 || response.status === 401) {
-                    console.log('ℹ️ No orders found or unauthorized');
+                    logger.info('ℹ️ No orders found or unauthorized');
                     setOrders([]);
                     setError(null); // Don't show error for empty state
                     return;
@@ -328,13 +358,14 @@ const OrdersPage = () => {
             
             const data = await response.json();
             const endTime = performance.now();
-            console.log(`✅ Fetched ${data?.length || 0} orders in ${(endTime - startTime).toFixed(0)}ms`);
+            logger.info(`✅ Fetched ${data?.length || 0} orders in ${(endTime - startTime).toFixed(0)}ms`);
             
             setOrders(Array.isArray(data) ? data : []);
+            setLastUpdated(new Date());
             setError(null); // Clear error on success
         } catch (err: unknown) {
             // Don't show error for empty orders, just log it
-            console.error('❌ Error fetching orders:', err);
+            logger.error('❌ Error fetching orders:', err);
             setOrders([]);
             setError(null); // Don't show error to user
         }
@@ -372,7 +403,7 @@ const OrdersPage = () => {
 
     useEffect(() => {
         const initialize = async () => {
-            console.log('🚀 Initializing orders page...');
+            logger.info('🚀 Initializing orders page...');
             setLoading(true);
             
             try {
@@ -382,114 +413,73 @@ const OrdersPage = () => {
                 );
                 
                 const sessionPromise = supabase.auth.getSession();
-                
-                const { data: { session }, error: sessionError } = await Promise.race([
+
+                const _race = await Promise.race([
                     sessionPromise,
                     timeoutPromise
                 ]) as any;
+
+                const session = _race?.data?.session;
+                const sessionError = _race?.error;
                 
                 if (sessionError) {
-                    console.error('❌ Session error:', sessionError);
+                    logger.error('❌ Session error:', sessionError);
                     router.push('/login?redirect_to=/orders');
                     return;
                 }
                 
                 if (!session) {
-                    console.log('👤 No session, redirecting to login...');
+                    logger.info('👤 No session, redirecting to login...');
                     router.push('/login?redirect_to=/orders');
                     return;
                 }
                 
-                console.log('✅ User authenticated:', session.user.email);
+                logger.info('✅ User authenticated:', session.user.email);
                 setUser(session.user);
-                
-                // Fetch orders with timeout
-                await Promise.race([
-                    fetchOrders(),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('Orders fetch timeout')), 8000)
-                    )
-                ]).catch((err) => {
-                    console.error('⚠️ Initial fetch timeout, will retry with polling');
-                    // Don't fail - let polling handle it
-                });
+
+                // Fetch orders with timeout (no .catch chaining to avoid parser issues)
+                const ordersTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Orders fetch timeout')), 8000));
+                try {
+                    await Promise.race([fetchOrders(), ordersTimeout]);
+                } catch (err) {
+                    logger.warn('⚠️ Initial fetch timeout, will retry on manual refresh');
+                }
                 
             } catch (err) {
-                console.error('❌ Initialization error:', err);
+                logger.error('❌ Initialization error:', err);
                 // Don't redirect on timeout - try to recover
                 if (err instanceof Error && err.message.includes('timeout')) {
-                    console.warn('⚠️ Timeout occurred, but staying on page');
+                    logger.warn('⚠️ Timeout occurred, but staying on page');
                     setLoading(false);
                 } else {
                     router.push('/login?redirect_to=/orders');
                 }
             } finally {
                 setLoading(false);
-                console.log('✅ Orders page initialized');
+                logger.info('✅ Orders page initialized');
             }
         };
 
         initialize();
     }, [router]); // Remove supabase.auth and fetchOrders from dependencies
 
-    // POLLING-based updates (every 10 seconds) - Free tier friendly
+    // Removed auto-polling to respect Supabase free plan limits.
+    // Users can refresh manually with the button; also refresh when tab regains focus.
     useEffect(() => {
         if (!user) return;
-
-        console.log('⏰ Setting up polling for order updates (every 15s when tab is active)');
-        
-        let pollInterval: NodeJS.Timeout | null = null;
-        
-        const startPolling = () => {
-            if (pollInterval) return; // Already polling
-            
-            pollInterval = setInterval(() => {
-                // Only poll if document is visible
-                if (!document.hidden) {
-                    console.log('🔄 Auto-polling for order updates...');
-                    fetchOrders();
-                }
-            }, 15000); // 15 seconds
+        const onFocus = () => {
+            // refresh once when coming back to the tab
+            fetchOrders();
         };
-        
-        const stopPolling = () => {
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
-        };
-        
-        // Start polling immediately
-        startPolling();
-        
-        // Stop polling when tab is hidden, resume when visible
-        const handleVisibilityChange = () => {
-            if (document.hidden) {
-                console.log('⏸️ Tab hidden, pausing polling');
-                stopPolling();
-            } else {
-                console.log('▶️ Tab visible, resuming polling');
-                startPolling();
-                fetchOrders(); // Immediate refresh on tab focus
-            }
-        };
-        
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        // Cleanup on unmount
-        return () => {
-            console.log('🧹 Cleaning up polling interval');
-            stopPolling();
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-        };
-
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
     }, [user, fetchOrders]);
 
     if (loading) {
         // Failsafe: Auto-exit loading after 10 seconds
         if (!loadingTimeout) {
             setTimeout(() => {
-                console.warn('⚠️ Loading timeout - force exiting loading state');
+                logger.warn('⚠️ Loading timeout - force exiting loading state');
                 setLoading(false);
                 setLoadingTimeout(true);
                 setError('Page took too long to load. Please refresh or try again.');
@@ -538,7 +528,7 @@ const OrdersPage = () => {
                             My <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Orders</span>
                         </h1>
                         <p className="text-lg text-gray-600">Track your delicious deliveries</p>
-                        <p className="text-sm text-gray-500 mt-1">🔄 Auto-updates every 15 seconds</p>
+                        <p className="text-sm text-gray-500 mt-1">Tip: Tap Refresh to update. We conserve requests on the free plan.</p>
                     </div>
                     <button 
                         onClick={handleManualRefresh}
@@ -548,6 +538,9 @@ const OrdersPage = () => {
                         <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
                         <span className="font-semibold">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
                     </button>
+                    {lastUpdated && (
+                        <p className="text-xs text-gray-500 mt-2">Last updated: {lastUpdated.toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: 'numeric', month: 'short' })}</p>
+                    )}
                 </div>
 
                 {showSuccess && (

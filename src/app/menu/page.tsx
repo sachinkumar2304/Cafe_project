@@ -6,7 +6,8 @@ import { useCart } from '@/context/CartContext';
 import { CartModal } from '@/components/CartModal';
 import { MobileHeader } from '@/components/MobileHeader';
 import { useAuth } from '@/hooks/useAuth';
-import { Menu as MenuIcon, X, MapPin, ShoppingCart, Utensils, Loader2, Minus, Plus, User, LogOut, Zap, Search } from 'lucide-react';
+import { Menu as MenuIcon, X, MapPin, ShoppingCart, Utensils, Loader2, Minus, Plus, User, LogOut, Zap, Search, Heart } from 'lucide-react';
+import { useWishlist } from '@/context/WishlistContext';
 
 // --- Interfaces and Types ---
 interface ShopLocation { id: string; name: string; address: string; highlights: string; }
@@ -115,12 +116,13 @@ const useDataFetcher = () => {
 };
 
 // --- UI Components ---
-const MenuHeader = ({ locations, activeLocationId, setActiveLocationId, cartCount, onOpenCart }: { 
+const MenuHeader = ({ locations, activeLocationId, setActiveLocationId, cartCount, onOpenCart, wishlistCount = 0 }: { 
     locations: ShopLocation[], 
     activeLocationId: string | null, 
     setActiveLocationId: (id: string) => void,
     cartCount: number,
-    onOpenCart: () => void
+    onOpenCart: () => void,
+    wishlistCount?: number
 }) => {
     const [mounted, setMounted] = useState(false);
     const { user, isAuthReady, signOut } = useAuth();
@@ -152,6 +154,13 @@ const MenuHeader = ({ locations, activeLocationId, setActiveLocationId, cartCoun
                 </Link>
                 <div className="flex items-center space-x-4">
                     <Link href="/" className="text-lg font-medium text-gray-700 hover:text-orange-600 transition hidden sm:block">Home</Link>
+                    <Link href="/wishlist" className="hidden sm:flex items-center gap-1 text-sm font-medium text-gray-700 hover:text-rose-600 transition relative">
+                        <Heart className="h-4 w-4" />
+                        Wishlist
+                        {wishlistCount > 0 && (
+                            <span className="absolute -top-2 -right-3 bg-rose-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border-2 border-white">{wishlistCount}</span>
+                        )}
+                    </Link>
                     {mounted && isAuthReady && (
                         user ? (
                             <>
@@ -201,7 +210,7 @@ const MenuHeader = ({ locations, activeLocationId, setActiveLocationId, cartCoun
     );
 };
 
-const MenuItemCard = ({ item, locationName, onAddToCart }: { item: MenuItem, locationName: string, onAddToCart: (item: MenuItem & { locationName: string }) => void }) => {
+const MenuItemCard = ({ item, locationName, onAddToCart, onToggleWishlist, isWishlisted }: { item: MenuItem, locationName: string, onAddToCart: (item: MenuItem & { locationName: string }) => void, onToggleWishlist: (item: MenuItem) => void, isWishlisted: boolean }) => {
     const isOutOfStock = !item.isAvailable;
     return (
         <div className={`group bg-white p-5 rounded-2xl shadow-md border-2 transition-all duration-300 ${isOutOfStock ? 'opacity-60 border-gray-200' : 'border-transparent hover:shadow-xl hover:border-orange-200 hover:-translate-y-1'}`}>
@@ -213,6 +222,13 @@ const MenuItemCard = ({ item, locationName, onAddToCart }: { item: MenuItem, loc
                         className="w-24 h-24 object-cover rounded-xl shadow-sm group-hover:scale-105 transition-transform duration-300" 
                         onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/100x100/fb923c/ffffff?text=Food' }} 
                     />
+                    <button
+                        onClick={() => onToggleWishlist(item)}
+                        aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+                        className={`absolute -bottom-2 -right-2 p-2 rounded-full shadow-md border ${isWishlisted ? 'bg-rose-600 text-white border-rose-700' : 'bg-white text-rose-600 border-rose-200 hover:bg-rose-50'}`}
+                    >
+                        <Heart className="w-4 h-4" fill={isWishlisted ? 'currentColor' : 'none'} />
+                    </button>
                     {item.isVeg && (
                         <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md">
                             Veg
@@ -251,12 +267,14 @@ const MenuItemCard = ({ item, locationName, onAddToCart }: { item: MenuItem, loc
     );
 };
 
-const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocationId, locations }: { 
+const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocationId, locations, onToggleWishlist, isWishlisted }: { 
     menuItems: MenuItem[], 
     isLoading: boolean, 
     onAddToCart: (item: MenuItem & { locationName: string }) => void,
     activeLocationId: string | null,
-    locations: ShopLocation[]
+    locations: ShopLocation[],
+    onToggleWishlist: (item: MenuItem) => void,
+    isWishlisted: (id: string) => boolean
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     
@@ -351,7 +369,7 @@ const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocation
                         </div>
                         <div className="grid md:grid-cols-2 gap-6">
                             {filteredItems.map((item) => (
-                                <MenuItemCard key={item.id} item={item} onAddToCart={onAddToCart} locationName={activeLocationName} />
+                                <MenuItemCard key={item.id} item={item} onAddToCart={onAddToCart} onToggleWishlist={onToggleWishlist} isWishlisted={isWishlisted(item.id)} locationName={activeLocationName} />
                             ))}
                         </div>
                         {filteredItems.length === 0 && categories.length > 0 && (
@@ -391,7 +409,9 @@ const LocationMenuSection = ({ menuItems, isLoading, onAddToCart, activeLocation
 const MenuApp = () => {
     const { locations, menuItems, isLoading, error } = useDataFetcher();
     const { cartCount, addToCart, setIsCartOpen } = useCart();
+    const { toggle, has, count: wishlistCount } = useWishlist();
     const [activeLocationId, setActiveLocationId] = useState<string | null>(null);
+    const [reorderApplied, setReorderApplied] = useState(false);
 
     // Set initial active location from default locations
     useEffect(() => {
@@ -432,6 +452,33 @@ const MenuApp = () => {
         }
     }, [activeLocationId]);
 
+    // Apply reorder seed once when menu and location are ready
+    useEffect(() => {
+        if (reorderApplied) return;
+        if (!activeLocationId || locations.length === 0 || menuItems.length === 0) return;
+        try {
+            const raw = localStorage.getItem('reorder_seed');
+            if (!raw) return;
+            const seed: { name: string; qty: number }[] = JSON.parse(raw);
+            if (!Array.isArray(seed) || seed.length === 0) return;
+            // Try matching items by name within active location
+            const candidates = menuItems.filter(m => m.locationId === activeLocationId);
+            seed.forEach(s => {
+                const match = candidates.find(m => m.name.toLowerCase() === s.name.toLowerCase());
+                if (match) {
+                    for (let i = 0; i < Math.max(1, s.qty); i++) {
+                        addToCart({ ...match, isAvailable: match.isAvailable, imageUrl: match.imageUrl, locationId: match.locationId });
+                    }
+                }
+            });
+            setIsCartOpen(true);
+            setReorderApplied(true);
+            localStorage.removeItem('reorder_seed');
+        } catch (e) {
+            console.error('Failed to apply reorder seed', e);
+        }
+    }, [reorderApplied, activeLocationId, locations, menuItems, addToCart, setIsCartOpen]);
+
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
@@ -471,6 +518,7 @@ const MenuApp = () => {
                     setActiveLocationId={setActiveLocationId}
                     cartCount={cartCount}
                     onOpenCart={() => setIsCartOpen(true)}
+                    wishlistCount={wishlistCount}
                 />
             </div>
             <main>
@@ -486,6 +534,8 @@ const MenuApp = () => {
                     onAddToCart={addToCart} 
                     activeLocationId={activeLocationId}
                     locations={locations}
+                    onToggleWishlist={(item) => toggle({ id: item.id, name: item.name, price: item.price, imageUrl: item.imageUrl, locationId: item.locationId })}
+                    isWishlisted={(id) => has(id)}
                 />
             </main>
             <footer className="bg-gradient-to-br from-gray-900 via-red-900 to-gray-900 text-white py-8">

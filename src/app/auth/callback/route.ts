@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Use relative import to avoid any path alias resolution issues in certain tooling
 import { createClient } from '../../../lib/supabase/server';
 
+// /auth/callback handles the OAuth/email verification code exchange then redirects.
 export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url);
-  const code = requestUrl.searchParams.get('code');
-  const next = requestUrl.searchParams.get('next') || '/';
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
 
   if (code) {
-    const supabase = await createClient();
-    await supabase.auth.exchangeCodeForSession(code);
+    try {
+      const supabase = await createClient();
+      await supabase.auth.exchangeCodeForSession(code);
+    } catch (err) {
+      // Intentionally swallow errors to avoid leaking details; optionally could log with gated logger.
+      // console.error('Auth callback error', err); // Keep silent in production.
+    }
   }
 
-  // Redirect to the human-friendly callback page in the app
-  return NextResponse.redirect(`${requestUrl.origin}/auth/callback?verified=1`);
+  // Always redirect user to login with a flag so UI can show a success toast.
+  return NextResponse.redirect(`${url.origin}/login?verified=1`);
 }
+// Removed: this route conflicts with the page at /auth/callback
+// Please use /api/auth/callback for the route handler.

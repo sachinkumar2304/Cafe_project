@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useCart } from '@/context/CartContext';
-import { Menu, X, ShoppingCart, User, LogOut, ShoppingBag, Home, UtensilsCrossed } from 'lucide-react';
+import { useWishlist } from '@/context/WishlistContext';
+import { Menu, X, ShoppingCart, User, LogOut, ShoppingBag, Home, UtensilsCrossed, Heart } from 'lucide-react';
 
 interface MobileHeaderProps {
     currentPage?: string;
@@ -17,6 +18,7 @@ export function MobileHeader({ currentPage = '', onOpenCart, showCart = true }: 
     const [mounted, setMounted] = useState(false);
     const { user, isAuthReady, signOut } = useAuth();
     const { cartCount } = useCart();
+    const { count: wishlistCount } = useWishlist();
     const router = useRouter();
 
     useEffect(() => {
@@ -44,6 +46,13 @@ export function MobileHeader({ currentPage = '', onOpenCart, showCart = true }: 
                 <nav className="hidden md:flex space-x-6 items-center text-lg font-medium text-gray-700">
                     <Link href="/" className="hover:text-orange-600 transition">Home</Link>
                     <Link href="/menu" className="hover:text-orange-600 transition font-bold">Menu</Link>
+                    <Link href="/wishlist" className="relative hover:text-rose-600 transition flex items-center gap-1">
+                        <Heart className="h-5 w-5" />
+                        <span className="hidden lg:inline">Wishlist</span>
+                        {wishlistCount > 0 && (
+                            <span className="absolute -top-2 -right-3 flex items-center justify-center h-4 w-4 bg-rose-500 text-white text-[10px] font-bold rounded-full">{wishlistCount}</span>
+                        )}
+                    </Link>
                     {!mounted || !isAuthReady ? (
                         <>
                             <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse"></div>
@@ -139,6 +148,14 @@ export function MobileHeader({ currentPage = '', onOpenCart, showCart = true }: 
                     >
                         <UtensilsCrossed className="h-5 w-5" />
                         Menu
+                    </Link>
+                    <Link 
+                        href="/wishlist" 
+                        onClick={() => setIsMenuOpen(false)}
+                        className={`block px-4 py-3 text-gray-900 hover:bg-rose-50 flex items-center gap-2`}
+                    >
+                        <Heart className="h-5 w-5" />
+                        Wishlist {wishlistCount > 0 ? `(${wishlistCount})` : ''}
                     </Link>
                     
                     {!mounted || !isAuthReady ? (
