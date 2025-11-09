@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { MobileHeader } from '@/components/MobileHeader';
 import { createClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
-import { Loader2, ShoppingBag, CheckCircle, Truck, PackageCheck, XCircle, ArrowRight, RefreshCw, Filter, X, Calendar, AlertTriangle, Clock } from 'lucide-react';
+import { Loader2, ShoppingBag, CheckCircle, Truck, PackageCheck, XCircle, ArrowRight, RefreshCw, Filter, X, Calendar, AlertTriangle, Clock, Award } from 'lucide-react';
 
 // --- TYPES ---
 interface OrderItem {
@@ -225,6 +225,19 @@ const OrdersPage = () => {
     const [error, setError] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [loadingTimeout, setLoadingTimeout] = useState(false);
+    const [pointsToast, setPointsToast] = useState<{ points: number; orderNumber: number } | null>(null);
+
+    // Track which orders we've already notified for points
+    const notifiedRef = useMemo(() => {
+        if (typeof window === 'undefined') return new Set<number>();
+        try {
+            const raw = localStorage.getItem('points_notified_orders');
+            const arr: number[] = raw ? JSON.parse(raw) : [];
+            return new Set<number>(arr);
+        } catch {
+            return new Set<number>();
+        }
+    }, []);
 
     // Filter states
     const [statusFilter, setStatusFilter] = useState<Order['status'] | 'all'>('all');
@@ -326,6 +339,36 @@ const OrdersPage = () => {
             setError(null); // Don't show error to user
         }
     }, []); // Empty dependency - stable function
+
+    // When orders update, detect newly delivered orders and show points earned toast
+    useEffect(() => {
+        if (!orders || orders.length === 0) return;
+        if (typeof window === 'undefined') return;
+
+        // Find first delivered order that hasn't been notified yet
+        const newlyDelivered = orders.find(o => o.status === 'delivered' && !notifiedRef.has(o.id));
+        if (newlyDelivered) {
+            // Backend awards 10 points on delivery (see supabase/loyalty-schema.sql)
+            setPointsToast({ points: 10, orderNumber: newlyDelivered.order_number });
+
+            // Persist so we don't double-notify
+            try {
+                const raw = localStorage.getItem('points_notified_orders');
+                const arr: number[] = raw ? JSON.parse(raw) : [];
+                if (!arr.includes(newlyDelivered.id)) {
+                    arr.push(newlyDelivered.id);
+                    localStorage.setItem('points_notified_orders', JSON.stringify(arr));
+                }
+                notifiedRef.add(newlyDelivered.id);
+            } catch {
+                // ignore storage errors
+            }
+
+            // Auto-hide after 5s
+            const t = setTimeout(() => setPointsToast(null), 5000);
+            return () => clearTimeout(t);
+        }
+    }, [orders, notifiedRef]);
 
     useEffect(() => {
         const initialize = async () => {
@@ -476,6 +519,19 @@ const OrdersPage = () => {
             </div>
 
             <main className="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+                {pointsToast && (
+                    <div className="mb-6 rounded-xl border-2 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 p-4 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <Award className="h-6 w-6 text-green-600" />
+                            <div>
+                                <h3 className="font-bold text-green-900">🎉 Congratulations!</h3>
+                                <p className="text-green-800 text-sm">
+                                    Order #{pointsToast.orderNumber} delivered. You earned <span className="font-bold">{pointsToast.points} points</span>.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <div className="mb-8 flex justify-between items-start">
                     <div>
                         <h1 className="text-5xl font-black text-gray-900 mb-2">
