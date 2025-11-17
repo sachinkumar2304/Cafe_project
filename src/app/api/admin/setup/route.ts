@@ -20,21 +20,26 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Insert user as admin
-        const { data: admin, error: adminError } = await supabase
+        // If already super_admin or admin, do not downgrade role
+        const { data: existingAdmin } = await supabase
             .from('admins')
-            .upsert([
-                {
-                    id: user.id,
-                    role: 'admin'
-                }
-            ])
-            .select()
-            .single();
+            .select('id, role')
+            .eq('id', user.id)
+            .maybeSingle();
 
-        if (adminError) {
-            console.error('Error creating admin:', adminError);
-            return NextResponse.json({ error: 'Failed to create admin' }, { status: 500 });
+        let admin = existingAdmin;
+        if (!existingAdmin) {
+            // Insert minimal row with default 'admin' role
+            const { data: inserted, error: insertErr } = await supabase
+                .from('admins')
+                .insert({ id: user.id })
+                .select()
+                .single();
+            if (insertErr) {
+                console.error('Error creating admin:', insertErr);
+                return NextResponse.json({ error: 'Failed to create admin' }, { status: 500 });
+            }
+            admin = inserted;
         }
 
         // Update user metadata

@@ -6,7 +6,7 @@ ALTER TABLE public.profiles
 ADD COLUMN IF NOT EXISTS loyalty_points INT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS total_orders INT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE,
-ADD COLUMN IF NOT EXISTS referred_by VARCHAR(20);
+ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 -- Create index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_profiles_referral_code ON public.profiles(referral_code);

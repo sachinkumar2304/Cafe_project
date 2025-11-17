@@ -17,6 +17,5 @@ export const OrderPayloadSchema = z.object({
 });
 
 export const ReferralApplySchema = z.object({
-  userId: z.string().uuid(),
   referralCode: z.string().min(4).max(50),
 });

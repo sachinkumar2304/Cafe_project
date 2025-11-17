@@ -11,22 +11,80 @@ export async function GET(request: Request) {
             return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
         }
 
-        const { data: profile, error: profileError } = await supabase
+        let { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', user.id)
             .single();
 
         if (profileError) {
-            // If no profile exists yet, return an empty object with email
+            // No profile row yet (PGRST116) -> create minimal row so referral & loyalty system works uniformly
             if (profileError.code === 'PGRST116') {
-                return NextResponse.json({ 
-                    email: user.email || '', 
-                    loyalty_points: 0,
-                    total_orders: 0 
-                });
+                const { error: insertErr } = await supabase
+                    .from('profiles')
+                    .insert({ id: user.id, email: user.email });
+                if (insertErr) {
+                    console.error('Failed creating initial profile row:', insertErr);
+                    return NextResponse.json({ 
+                        email: user.email || '', 
+                        loyalty_points: 0,
+                        total_orders: 0 
+                    });
+                }
+                // Re-fetch newly created profile
+                const { data: newProfile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', user.id)
+                    .single();
+                profile = newProfile || null;
+            } else {
+                throw profileError;
             }
-            throw profileError;
+        }
+
+        // Ensure referral_code exists for existing profiles (post-migration backfill)
+        if (!profile.referral_code) {
+            // Try to deterministically generate like DB trigger: 'USER' + first 6 chars of UUID without dashes
+            const baseId = (user.id || '').replace(/-/g, '');
+            const candidateFromId = `USER${baseId.substring(0, 6)}`;
+
+            const generateFallback = () => {
+                const ts = Date.now().toString(36).toUpperCase();
+                const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+                return `USER${ts}${rand}`.slice(0, 20); // keep within VARCHAR(20)
+            };
+
+            const tryCodes = [candidateFromId, generateFallback(), generateFallback()];
+            for (const code of tryCodes) {
+                const { error: setCodeError } = await supabase
+                    .from('profiles')
+                    .update({ referral_code: code })
+                    .eq('id', user.id)
+                    .is('referral_code', null);
+
+                // If no error, or unique violation not triggered (supabase may surface as 23505), break
+                if (!setCodeError) {
+                    profile.referral_code = code;
+                    break;
+                }
+                // If unique violation, continue to next code; otherwise log and break
+                const msg = setCodeError?.message || '';
+                if (!/duplicate key|unique/i.test(msg)) {
+                    console.warn('Failed setting referral_code:', setCodeError);
+                    break;
+                }
+            }
+
+            // If still missing, re-fetch once (in case another concurrent request set it)
+            if (!profile.referral_code) {
+                const { data: refreshed } = await supabase
+                    .from('profiles')
+                    .select('referral_code')
+                    .eq('id', user.id)
+                    .single();
+                if (refreshed?.referral_code) profile.referral_code = refreshed.referral_code;
+            }
         }
 
         // Count total orders for this user
