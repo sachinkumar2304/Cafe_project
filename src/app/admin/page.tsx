@@ -7,16 +7,16 @@ import { Loader2, CheckCircle, Truck, PackageCheck, XCircle, RefreshCw, Shopping
 
 // --- TYPES ---
 interface ShopLocation { id: string; name: string; address: string; highlights: string; }
-interface MenuItem { 
-    id: string; 
-    name: string; 
-    description: string; 
-    price: number; 
-    category: string; 
-    is_veg: boolean; 
-    is_available: boolean; 
-    image_url: string; 
-    location_id: string; 
+interface MenuItem {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    category: string;
+    is_veg: boolean;
+    is_available: boolean;
+    image_url: string;
+    location_id: string;
 }
 interface Profile { name: string; email: string; phone: string; address: string; city: string; pincode: string; landmark: string; }
 interface OrderItem {
@@ -56,6 +56,8 @@ interface Order {
     profiles: Profile | null;
     order_items: OrderItem[];
 }
+
+
 const DEFAULT_IMAGE_URL = 'https://placehold.co/150x150/DC2626/ffffff?text=SNACKIFY';
 
 // --- AUTH HOOK ---
@@ -68,7 +70,7 @@ const useSupabaseAuth = () => {
 
     const checkAuthAndAdmin = useCallback(async (user: User | null) => {
         console.log('🔍 Checking auth and admin status for user:', user?.id);
-        
+
         if (user) {
             setCurrentUser(user);
             try {
@@ -77,9 +79,9 @@ const useSupabaseAuth = () => {
                     .select('id, role')
                     .eq('id', user.id)
                     .maybeSingle();
-                
+
                 console.log('👮 Admin check result:', { adminData, adminError });
-                
+
                 if (adminError && adminError.code !== 'PGRST116') {
                     console.error('❌ Error checking admin status:', adminError);
                     setIsAdmin(false);
@@ -121,7 +123,7 @@ const useSupabaseAuth = () => {
             try {
                 const sessionRes = await supabase.auth.getSession();
                 console.log('📦 Session result:', sessionRes.data.session?.user?.id || 'No session');
-                
+
                 if (isMounted) {
                     await checkAuthAndAdmin(sessionRes.data.session?.user ?? null);
                 }
@@ -183,7 +185,7 @@ const useMenuData = (isAuthReady: boolean) => {
                     const menuJson = await menuRes.json() as MenuItem[];
                     setMenuItems(menuJson.sort((a: MenuItem, b: MenuItem) => a.name.localeCompare(b.name)));
                 }
-            } catch (error) { console.error('Error fetching menu data:', error); } 
+            } catch (error) { console.error('Error fetching menu data:', error); }
             finally { setIsLoading(false); }
         };
         fetchData();
@@ -224,7 +226,7 @@ const OrderManager = () => {
         setError(null);
         try {
             const startTime = performance.now();
-            
+
             // Fetch from API instead of direct Supabase call
             const response = await fetch('/api/admin/orders', {
                 cache: 'no-store',
@@ -232,16 +234,16 @@ const OrderManager = () => {
                     'Cache-Control': 'no-cache',
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error('Failed to fetch orders');
             }
-            
+
             const ordersData = await response.json();
 
             const endTime = performance.now();
             console.log(`✅ Fetched ${ordersData?.length || 0} orders in ${(endTime - startTime).toFixed(0)}ms`);
-            
+
             // Debug: Log cancelled orders
             const cancelledOrders = ordersData.filter((o: Order) => o.status === 'cancelled' || o.is_cancelled);
             if (cancelledOrders.length > 0) {
@@ -260,33 +262,33 @@ const OrderManager = () => {
 
     useEffect(() => {
         fetchOrders();
-        
+
         // Auto-refresh removed - admin will manually refresh
         // const interval = setInterval(() => {
         //     console.log('🔄 Auto-refreshing orders...');
         //     fetchOrders();
         // }, 15000);
-        
+
         // return () => clearInterval(interval);
     }, [fetchOrders]);
 
     const handleUpdate = async (orderId: number, update: OrderUpdate) => {
         console.log(`🔄 Updating order #${orderId} to status: ${update.status}`);
-        
+
         // Prevent duplicate updates
         if (updatingOrders.has(orderId)) {
             console.warn('⚠️ Order already being updated, please wait...');
             return;
         }
-        
+
         setUpdatingOrders(prev => new Set(prev).add(orderId));
-        
+
         try {
             // 🚀 OPTIMISTIC UPDATE - Update UI immediately for better UX
-            setOrders(prevOrders => 
-                prevOrders.map(order => 
-                    order.id === orderId 
-                        ? { ...order, status: update.status || order.status } 
+            setOrders(prevOrders =>
+                prevOrders.map(order =>
+                    order.id === orderId
+                        ? { ...order, status: update.status || order.status }
                         : order
                 )
             );
@@ -309,7 +311,7 @@ const OrderManager = () => {
             const respJson = await resp.json();
             const endTime = performance.now();
             console.log(`📡 API response in ${(endTime - startTime).toFixed(0)}ms`);
-            
+
             if (!resp.ok) {
                 // ❌ Revert optimistic update on error
                 console.warn('⚠️ Update failed, reverting UI...');
@@ -318,14 +320,14 @@ const OrderManager = () => {
             }
 
             console.log('✅ Order updated successfully');
-            
+
             // ✅ Success - Show feedback
             if (update.status === 'delivered') {
                 alert('Order delivered successfully!');
             }
-            
+
             // Manual refresh only - user can click refresh button
-            
+
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             console.error('❌ Error updating order:', msg);
@@ -355,7 +357,7 @@ const OrderManager = () => {
                 <div className="text-center py-12 bg-red-50 rounded-lg">
                     <XCircle className="mx-auto h-12 w-12 text-red-500" />
                     <p className="mt-2 text-red-600 font-medium">{error}</p>
-                    <button 
+                    <button
                         onClick={fetchOrders}
                         className="mt-4 px-4 py-2 bg-gradient-to-r from-amber-700 to-red-800 text-white rounded-lg hover:from-amber-800 hover:to-red-900 hover:scale-105 transition-all font-semibold shadow-md"
                     >
@@ -371,13 +373,12 @@ const OrderManager = () => {
             ) : (
                 <div className="space-y-4">
                     {orders.map(order => (
-                        <div 
-                            key={order.id} 
-                            className={`border rounded-lg p-4 space-y-4 shadow-sm hover:shadow-md transition-shadow ${
-                                order.status === 'cancelled' 
-                                    ? 'bg-red-50 border-red-200 opacity-75' 
-                                    : 'bg-white'
-                            }`}
+                        <div
+                            key={order.id}
+                            className={`border rounded-lg p-4 space-y-4 shadow-sm hover:shadow-md transition-shadow ${order.status === 'cancelled'
+                                ? 'bg-red-50 border-red-200 opacity-75'
+                                : 'bg-white'
+                                }`}
                         >
                             {/* Header Section */}
                             <div className="flex justify-between items-start border-b pb-3">
@@ -453,7 +454,7 @@ const OrderManager = () => {
                                     </div>
                                 ) : (
                                     <>
-                                        <select 
+                                        <select
                                             value={order.status}
                                             onChange={(e) => {
                                                 const newStatus = e.target.value as OrderStatus;
@@ -473,37 +474,37 @@ const OrderManager = () => {
                                             </div>
                                         )}
                                         {order.status === 'out_for_delivery' && (
-                                            <form onSubmit={(e) => { 
+                                            <form onSubmit={(e) => {
                                                 e.preventDefault();
                                                 const enteredOtp = otpValues[order.id] || '';
                                                 const correctOtp = order.otp;
-                                                
+
                                                 // Validate OTP format
                                                 if (!enteredOtp || enteredOtp.length !== 6 || !/^\d+$/.test(enteredOtp)) {
                                                     alert('❌ Please enter a valid 6-digit OTP');
                                                     return;
                                                 }
-                                                
+
                                                 // Validate OTP match
                                                 if (enteredOtp !== correctOtp) {
                                                     alert(`❌ Invalid OTP!\n\nEntered: ${enteredOtp}\nCorrect OTP: ${correctOtp}\n\nPlease check with customer and try again.`);
                                                     return;
                                                 }
-                                                
+
                                                 // OTP verified - proceed with delivery
-                                                handleUpdate(order.id, { 
+                                                handleUpdate(order.id, {
                                                     status: 'delivered',
-                                                    otp: enteredOtp 
-                                                }); 
+                                                    otp: enteredOtp
+                                                });
                                                 // Clear OTP value after submission
                                                 setOtpValues(prev => ({ ...prev, [order.id]: '' }));
-                                            }} 
-                                            className="flex items-center gap-2"
+                                            }}
+                                                className="flex items-center gap-2"
                                             >
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="Enter 6-digit OTP" 
-                                                    value={otpValues[order.id] || ''} 
+                                                <input
+                                                    type="text"
+                                                    placeholder="Enter 6-digit OTP"
+                                                    value={otpValues[order.id] || ''}
                                                     onChange={(e) => {
                                                         const value = e.target.value.replace(/[^0-9]/g, '');
                                                         if (value.length <= 6) {
@@ -515,8 +516,8 @@ const OrderManager = () => {
                                                     required
                                                     disabled={updatingOrders.has(order.id)}
                                                 />
-                                                <button 
-                                                    type="submit" 
+                                                <button
+                                                    type="submit"
                                                     className="p-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                                                     disabled={updatingOrders.has(order.id)}
                                                 >
@@ -549,21 +550,21 @@ const MenuManager = ({ locations, menuItems, isLoading, refreshData }: { locatio
     const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
     const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' | '' }>({ text: '', type: '' });
     useEffect(() => { if (locations.length > 0 && !activeLocation) { setActiveLocation(locations[0]); } }, [locations, activeLocation]);
-    const filteredMenu = useMemo(() => { 
-        if (!activeLocation) return []; 
-        return menuItems.filter(item => item.location_id === activeLocation.id); 
+    const filteredMenu = useMemo(() => {
+        if (!activeLocation) return [];
+        return menuItems.filter(item => item.location_id === activeLocation.id);
     }, [menuItems, activeLocation]);
     const handleSaveItem = async (itemData: Omit<MenuItem, 'id'>) => {
         if (!activeLocation) return;
-        const itemPayload = { 
-            name: itemData.name, 
-            description: itemData.description, 
-            price: Number(itemData.price), 
-            category: itemData.category, 
-            is_veg: itemData.is_veg, 
-            is_available: itemData.is_available, 
-            image_url: itemData.image_url || DEFAULT_IMAGE_URL, 
-            location_id: activeLocation.id 
+        const itemPayload = {
+            name: itemData.name,
+            description: itemData.description,
+            price: Number(itemData.price),
+            category: itemData.category,
+            is_veg: itemData.is_veg,
+            is_available: itemData.is_available,
+            image_url: itemData.image_url || DEFAULT_IMAGE_URL,
+            location_id: activeLocation.id
         };
         try {
             const method = editingItem ? 'PUT' : 'POST';
@@ -603,10 +604,10 @@ const MenuManager = ({ locations, menuItems, isLoading, refreshData }: { locatio
         const action = newStatus ? 'mark as available' : 'mark as unavailable';
         if (!confirm(`Do you want to ${action} "${itemName}"?`)) return;
         try {
-            const response = await fetch('/api/menu', { 
-                method: 'PUT', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ id: itemId, is_available: newStatus }) 
+            const response = await fetch('/api/menu', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: itemId, is_available: newStatus })
             });
             if (response.ok) {
                 setMessage({ text: `${itemName} ${newStatus ? 'is now available' : 'marked as unavailable'}!`, type: 'success' });
@@ -618,17 +619,17 @@ const MenuManager = ({ locations, menuItems, isLoading, refreshData }: { locatio
         } catch (error) { setMessage({ text: `An unexpected error occurred.`, type: 'error' }); }
     };
     const ItemFormModal = ({ itemToEdit }: { itemToEdit: MenuItem | null }) => {
-    const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>({ 
-        name: itemToEdit?.name || '', 
-        description: itemToEdit?.description || '', 
-        price: itemToEdit?.price || 0, 
-        category: itemToEdit?.category || '', 
-        is_veg: itemToEdit?.is_veg ?? true, 
-        is_available: itemToEdit?.is_available ?? true, 
-        image_url: itemToEdit?.image_url || '', 
-        location_id: activeLocation?.id || '' 
-    });
-    const [uploading, setUploading] = useState(false);
+        const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>({
+            name: itemToEdit?.name || '',
+            description: itemToEdit?.description || '',
+            price: itemToEdit?.price || 0,
+            category: itemToEdit?.category || '',
+            is_veg: itemToEdit?.is_veg ?? true,
+            is_available: itemToEdit?.is_available ?? true,
+            image_url: itemToEdit?.image_url || '',
+            location_id: activeLocation?.id || ''
+        });
+        const [uploading, setUploading] = useState(false);
         const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
             const { name, value, type } = e.target;
             const finalValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : (type === 'number' ? Number(value) : value);
@@ -645,10 +646,19 @@ const MenuManager = ({ locations, menuItems, isLoading, refreshData }: { locatio
                 fd.append('file', file);
                 const res = await fetch('/api/upload', { method: 'POST', body: fd });
                 const json = await res.json();
-                if (res.ok && json.publicUrl) {
-                    setFormData(prev => ({ ...prev, image_url: json.publicUrl }));
+
+                // CRITICAL FIX: API returns { ok: true, data: { publicUrl } }, not { publicUrl }
+                if (res.ok && json.data?.publicUrl) {
+                    setFormData(prev => ({ ...prev, image_url: json.data.publicUrl }));
+                    console.log('✅ Upload success:', json.data.publicUrl);
                 } else {
-                    console.error('Upload failed', json);
+                    // LOG THE FULL RESPONSE TO SEE WHAT'S WRONG
+                    console.error('Upload failed - Full response:', {
+                        status: res.status,
+                        statusText: res.statusText,
+                        ok: res.ok,
+                        json: json
+                    });
                     alert('Image upload failed. Please try again or provide an image URL.');
                 }
             } catch (err) {
@@ -710,13 +720,13 @@ const AdminApp = () => {
                     'Content-Type': 'application/json'
                 }
             });
-            
+
             if (!response.ok) {
                 const error = await response.json();
                 console.error('Admin setup failed:', error);
                 return false;
             }
-            
+
             return true;
         } catch (error) {
             console.error('Error in admin setup:', error);
@@ -790,7 +800,7 @@ const AdminApp = () => {
 
                 // Ensure admin is set up in the database
                 const setupSuccess = await ensureAdminSetup(signInData.session?.access_token || '');
-                
+
                 if (!setupSuccess) {
                     throw new Error('Failed to set up admin privileges');
                 }
@@ -799,7 +809,7 @@ const AdminApp = () => {
 
                 // Update user metadata with admin status
                 const { error: updateError } = await supabase.auth.updateUser({
-                    data: { 
+                    data: {
                         isAdmin: true,
                         roleName: 'admin'
                     }
@@ -922,7 +932,7 @@ const AdminApp = () => {
     if (!isAuthReady) {
         return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-10 w-10 animate-spin text-red-700" /></div>;
     }
-    
+
     if (!isAdmin) {
         return <AdminLoginForm />;
     }
@@ -936,7 +946,7 @@ const AdminApp = () => {
                         <h1 className="text-2xl font-black">Snackify - Admin Panel</h1>
                     </div>
                     <div className="flex items-center space-x-4">
-                         <span className="text-sm font-medium">{currentUser?.email || 'Admin'}</span>
+                        <span className="text-sm font-medium">{currentUser?.email || 'Admin'}</span>
                         <Link href="/" className="text-sm font-semibold hover:text-amber-200 transition">Live Site</Link>
                         <button onClick={logoutAdmin} className="text-sm bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg hover:bg-white/30 transition font-semibold">Logout</button>
                     </div>
@@ -945,23 +955,21 @@ const AdminApp = () => {
             <main className="max-w-7xl mx-auto p-6">
                 <div className="border-b-2 border-amber-200">
                     <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                        <button 
-                            onClick={() => setActiveTab('orders')} 
-                            className={`whitespace-nowrap py-4 px-1 border-b-4 font-bold text-base transition ${
-                                activeTab === 'orders' 
-                                    ? 'border-amber-700 text-amber-800' 
-                                    : 'border-transparent text-gray-500 hover:text-amber-700 hover:border-amber-400'
-                            }`}
+                        <button
+                            onClick={() => setActiveTab('orders')}
+                            className={`whitespace-nowrap py-4 px-1 border-b-4 font-bold text-base transition ${activeTab === 'orders'
+                                ? 'border-amber-700 text-amber-800'
+                                : 'border-transparent text-gray-500 hover:text-amber-700 hover:border-amber-400'
+                                }`}
                         >
                             Order Management
                         </button>
-                        <button 
-                            onClick={() => setActiveTab('menu')} 
-                            className={`whitespace-nowrap py-4 px-1 border-b-4 font-bold text-base transition ${
-                                activeTab === 'menu' 
-                                    ? 'border-amber-700 text-amber-800' 
-                                    : 'border-transparent text-gray-500 hover:text-amber-700 hover:border-amber-400'
-                            }`}
+                        <button
+                            onClick={() => setActiveTab('menu')}
+                            className={`whitespace-nowrap py-4 px-1 border-b-4 font-bold text-base transition ${activeTab === 'menu'
+                                ? 'border-amber-700 text-amber-800'
+                                : 'border-transparent text-gray-500 hover:text-amber-700 hover:border-amber-400'
+                                }`}
                         >
                             Menu Management
                         </button>
