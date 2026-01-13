@@ -141,7 +141,7 @@ const HeroSection = () => (
         <div className="absolute -left-40 -top-24 w-[420px] h-[420px] bg-gradient-to-br from-orange-300 to-orange-200 rounded-full opacity-20 blur-3xl animate-float" />
         <div className="absolute right-[-120px] top-8 w-[360px] h-[360px] bg-gradient-to-br from-red-300 to-pink-200 rounded-full opacity-20 blur-3xl animate-float animation-delay-2000" />
         <div className="absolute bottom-0 left-1/2 w-[500px] h-[500px] bg-gradient-to-t from-yellow-200 to-transparent rounded-full opacity-10 blur-2xl" />
-        
+
         <div className="container mx-auto px-4 relative z-10 pt-8 md:pt-4">
             <div className="max-w-5xl mx-auto text-center">
                 {/* Location Badge */}
@@ -151,7 +151,7 @@ const HeroSection = () => (
                         <span className="text-orange-600 font-bold">Now delivering in</span> Badlapur, Ambernath, Ulhasnagar & Vangani
                     </span>
                 </div>
-                
+
                 {/* Main Heading */}
                 <h1 className="text-6xl md:text-7xl font-black leading-tight mb-6">
                     <span className="block text-gray-900">Cravings met.</span>
@@ -159,15 +159,15 @@ const HeroSection = () => (
                         Delivered fresh.
                     </span>
                 </h1>
-                
+
                 {/* Subheading */}
                 <p className="text-xl md:text-2xl text-gray-600 mb-10 max-w-3xl mx-auto leading-relaxed">
-                    Hand-crafted <span className="font-semibold text-orange-600">dosas</span>, 
-                    <span className="font-semibold text-red-600"> sweets</span> and 
-                    <span className="font-semibold text-pink-600"> snacks</span> from our neighbourhood kitchens — 
+                    Hand-crafted <span className="font-semibold text-orange-600">dosas</span>,
+                    <span className="font-semibold text-red-600"> sweets</span> and
+                    <span className="font-semibold text-pink-600"> snacks</span> from our neighbourhood kitchens —
                     made fresh daily, delivered hot to your doorstep.
                 </p>
-                
+
                 {/* CTA Buttons */}
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
                     <Link href="/menu" className="group relative inline-flex items-center gap-3 px-8 py-4 text-lg font-bold text-white bg-gradient-to-r from-orange-600 to-red-600 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 transform transition-all duration-300 overflow-hidden">
@@ -180,7 +180,7 @@ const HeroSection = () => (
                         View Locations
                     </a>
                 </div>
-                
+
                 {/* Stats/Trust Indicators */}
                 <div className="grid grid-cols-3 gap-8 max-w-2xl mx-auto pt-8 border-t border-gray-200">
                     <div className="text-center">
@@ -219,10 +219,10 @@ const CategoryCarousel = () => {
     const scroll = (direction: 'left' | 'right') => {
         if (scrollContainerRef.current) {
             const scrollAmount = 300;
-            const newPosition = direction === 'left' 
-                ? scrollPosition - scrollAmount 
+            const newPosition = direction === 'left'
+                ? scrollPosition - scrollAmount
                 : scrollPosition + scrollAmount;
-            
+
             scrollContainerRef.current.scrollTo({
                 left: newPosition,
                 behavior: 'smooth'
@@ -236,7 +236,7 @@ const CategoryCarousel = () => {
             {/* Decorative Elements */}
             <div className="absolute top-0 left-0 w-96 h-96 bg-orange-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
             <div className="absolute bottom-0 right-0 w-96 h-96 bg-red-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-            
+
             <div className="container mx-auto px-4 relative z-10">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-8">
@@ -246,7 +246,7 @@ const CategoryCarousel = () => {
                         </h2>
                         <p className="text-gray-600 font-medium">Browse our popular categories</p>
                     </div>
-                    
+
                     {/* Navigation Arrows - Desktop */}
                     <div className="hidden md:flex gap-2">
                         <button
@@ -267,7 +267,7 @@ const CategoryCarousel = () => {
                 </div>
 
                 {/* Category Cards */}
-                <div 
+                <div
                     ref={scrollContainerRef}
                     className="flex gap-6 overflow-x-auto scrollbar-hide scroll-smooth pb-4"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
@@ -286,15 +286,15 @@ const CategoryCarousel = () => {
                                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                                     loading="lazy"
                                 />
-                                
+
                                 {/* Gradient Overlay */}
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
-                                
+
                                 {/* Label */}
                                 <div className="absolute bottom-0 left-0 right-0 p-3">
                                     <h3 className="text-white font-bold text-lg text-center">{category.name}</h3>
                                 </div>
-                                
+
                                 {/* Popular Badge */}
                                 {category.popular && (
                                     <div className="absolute top-2 right-2 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
@@ -305,7 +305,7 @@ const CategoryCarousel = () => {
                         </Link>
                     ))}
                 </div>
-                
+
                 {/* Scroll Hint - Mobile */}
                 <p className="text-center text-sm text-gray-500 mt-4 md:hidden">
                     👉 Swipe to see more categories
@@ -341,22 +341,22 @@ const LocationCard = ({ location, index }: { location: ShopLocation, index: numb
         <div className="group bg-white rounded-3xl shadow-lg border border-gray-100 hover:shadow-2xl hover:border-orange-200 transition-all duration-500 transform hover:-translate-y-2 overflow-hidden opacity-0 animate-fade-in" style={{ animationDelay: `${index * 150}ms` }}>
             {/* Image Container */}
             <div className="relative h-64 w-full overflow-hidden bg-gradient-to-br from-orange-100 to-red-100">
-                <img 
-                    src={getLocationImage(location.name)} 
-                    alt={location.name} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
+                <img
+                    src={getLocationImage(location.name)}
+                    alt={location.name}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                     loading="lazy"
-                    onError={(e) => { 
+                    onError={(e) => {
                         const img = e.target as HTMLImageElement;
                         if (!img.src.includes('placeholder')) {
                             img.src = 'https://placehold.co/800x600/fb923c/ffffff?text=' + encodeURIComponent(location.name);
                         }
-                    }} 
+                    }}
                 />
                 {/* Gradient Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
             </div>
-            
+
             {/* Content */}
             <div className="p-6">
                 <div className="flex items-start gap-3 mb-4">
@@ -368,20 +368,20 @@ const LocationCard = ({ location, index }: { location: ShopLocation, index: numb
                         <p className="text-gray-600 text-sm">{location.address}</p>
                     </div>
                 </div>
-                
+
                 {/* Description */}
                 <p className="text-gray-700 mb-4 leading-relaxed">
                     {getLocationDescription(location.name)}
                 </p>
-                
+
                 {/* Footer */}
                 <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                     <div className="flex items-center text-orange-600 font-semibold text-sm">
                         <Star className="h-5 w-5 fill-orange-500 mr-2" />
                         {location.highlights}
                     </div>
-                    <Link 
-                        href="/menu" 
+                    <Link
+                        href="/menu"
                         className="inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700 group/link"
                     >
                         View Menu
@@ -397,7 +397,7 @@ const LocationsSection = ({ locations, isLoading }: { locations: ShopLocation[],
     <section id="locations" className="py-24 bg-white relative overflow-hidden">
         {/* Decorative elements */}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent"></div>
-        
+
         <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto text-center mb-16">
                 <h2 className="text-5xl md:text-6xl font-black text-gray-900 mb-4">
@@ -407,7 +407,7 @@ const LocationsSection = ({ locations, isLoading }: { locations: ShopLocation[],
                     Choose your nearest outlet and explore our handcrafted menu — each location brings its own specialty.
                 </p>
             </div>
-            
+
             {isLoading && locations.length === 0 ? (
                 <div className="text-center py-20">
                     <Loader2 className="h-12 w-12 animate-spin text-orange-600 mx-auto mb-4" />
@@ -444,7 +444,7 @@ const App = () => {
 
     return (
         <div className="min-h-screen bg-gray-100 font-sans">
-            <Header onOpenCart={() => setIsCartOpen(true)} cartCount={cartCount} /> 
+            <Header onOpenCart={() => setIsCartOpen(true)} cartCount={cartCount} />
             <main className="pt-16">
                 <HeroSection />
                 <CategoryCarousel />
@@ -453,7 +453,7 @@ const App = () => {
             <footer className="bg-gradient-to-br from-gray-900 via-red-900 to-gray-900 text-white py-12 relative overflow-hidden">
                 {/* Decorative gradient line */}
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 via-red-500 to-pink-500"></div>
-                
+
                 <div className="container mx-auto px-4 relative z-10">
                     <div className="grid md:grid-cols-4 gap-8 mb-8">
                         {/* Brand */}
@@ -466,7 +466,7 @@ const App = () => {
                                 Authentic South Indian flavors delivered fresh to your doorstep. Made with love, served with care.
                             </p>
                         </div>
-                        
+
                         {/* Quick Links */}
                         <div>
                             <h4 className="text-white font-bold mb-4">Quick Links</h4>
@@ -477,13 +477,13 @@ const App = () => {
                                 <Link href="/orders" className="text-gray-400 hover:text-orange-400 transition text-sm">My Orders</Link>
                             </div>
                         </div>
-                        
+
                         {/* Contact Section */}
                         <div>
                             <h4 className="text-white font-bold mb-4">Contact</h4>
                             <div className="flex flex-col space-y-3">
-                                <a 
-                                    href="tel:+918308990205" 
+                                <a
+                                    href="tel:+918308990205"
                                     className="text-gray-400 hover:text-orange-400 transition text-sm flex items-center gap-2 group"
                                 >
                                     <span className="bg-orange-500/10 p-2 rounded-lg group-hover:bg-orange-500/20 transition">📞</span>
@@ -492,7 +492,7 @@ const App = () => {
                                 <p className="text-gray-500 text-xs mt-2">Available 9 AM - 9 PM</p>
                             </div>
                         </div>
-                        
+
                         {/* Delivery Info */}
                         <div>
                             <h4 className="text-white font-bold mb-4">Delivery Areas</h4>
@@ -505,15 +505,15 @@ const App = () => {
                             </div>
                         </div>
                     </div>
-                    
+
                     {/* Bottom Bar */}
                     <div className="border-t border-gray-700 pt-6 text-center">
                         <p className="text-sm text-gray-400">
                             &copy; {new Date().getFullYear()} <span className="text-orange-400 font-semibold">Snackify</span>. All rights reserved.
                         </p>
-                        
+
                         {/* Developer Credit */}
-                        <div className="mt-4 pt-4 border-t border-gray-800">
+                        {/* <div className="mt-4 pt-4 border-t border-gray-800">
                             <a 
                                 href="https://www.linkedin.com/in/sachin-kumar-607a73345?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app" 
                                 target="_blank" 
@@ -528,7 +528,7 @@ const App = () => {
                                     <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
                                 </svg>
                             </a>
-                        </div>
+                        </div> */}
                     </div>
                 </div>
             </footer>
